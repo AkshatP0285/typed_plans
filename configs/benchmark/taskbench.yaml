@@ -1,0 +1,7 @@
+_target_: tpj.benchmarks.taskbench.TaskBenchBenchmark
+hf_path: microsoft/Taskbench
+subset: dailylifeapis        # dailylifeapis | huggingface | multimedia
+split: test
+types: null                  # e.g. [chain, dag]
+limit: 300
+sample_seed: ${seed}

@@ -1,0 +1,15 @@
+# Small open model on vLLM (planner, gate LLM, converter, ReAct, responder):
+#   vllm serve Qwen/Qwen3-8B --port 8000 --enable-lora \
+#     --lora-modules ir_planner=checkpoints/ir_planner_qwen3_8b
+_target_: tpj.llm.client.LLMClient
+name: qwen3-8b
+model: Qwen/Qwen3-8B
+base_url: ${oc.env:VLLM_SMALL_URL,http://localhost:8000/v1}
+api_key_env: null
+temperature: 0.0
+max_tokens: 4096
+structured_output: response_format
+extra_body:
+  chat_template_kwargs: {enable_thinking: false}
+cache_dir: ${llm_cache_dir}
+max_concurrency: 32

@@ -1,0 +1,2 @@
+_target_: tpj.executor.WaveScheduler
+max_parallel: null

@@ -1,0 +1,33 @@
+# Primary config for scripts/finetune.py
+defaults:
+  - plan_format: typed_ir
+  - _self_
+
+seed: 0
+models: {}
+
+finetune:
+  base_model: Qwen/Qwen3-8B
+  train_file: ???                 # synthetic IR dataset (JSONL: query, tools, plan)
+  eval_file: null
+  output_dir: checkpoints/ir_planner_qwen3_8b
+  few_shot: false                 # must match planner/finetuned.yaml
+  load_in_4bit: true              # QLoRA; false = LoRA in bf16
+  attn_implementation: sdpa       # flash_attention_2 if installed
+  epochs: 2
+  batch_size: 2
+  grad_accum: 8
+  lr: 2.0e-4
+  max_length: 8192
+  report_to: []                   # e.g. [wandb]
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+hydra:
+  run:
+    dir: outputs/finetune/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  job:
+    chdir: false

@@ -1,0 +1,5 @@
+# Every plan and every outcome goes to the LLM (indiscriminate LLM review).
+_target_: tpj.gate.simple.ConstantGate
+label: ERROR
+check_plan: true
+check_post: true

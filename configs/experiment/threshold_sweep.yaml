@@ -1,0 +1,8 @@
+# @package _global_
+# Cost vs reliability curve for the gate threshold.
+defaults:
+  - override /faults: light
+hydra:
+  sweeper:
+    params:
+      gate.threshold: 0.1,0.25,0.4,0.5,0.6,0.75,0.9

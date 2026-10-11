@@ -1,0 +1,8 @@
+# ~20% of plans get one plan fault; ~10% of tool calls get an execution fault.
+_target_: tpj.faults.FaultInjector
+plan_rate: 0.2
+exec_rate: 0.1
+plan_types: [drop_step, wrong_ref, wrong_tool, swap_args, drop_arg, wrong_literal]
+exec_types: [exception, timeout, empty, wrong_type, schema_drift, wrong_value]
+first_attempt_only: true   # transient faults: a re-run after repair succeeds
+seed: ${seed}

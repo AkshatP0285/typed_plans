@@ -1,0 +1,14 @@
+# Large open model on vLLM (LLM judge, IR editor):
+#   vllm serve Qwen/Qwen3-32B --port 8001
+_target_: tpj.llm.client.LLMClient
+name: qwen3-32b
+model: Qwen/Qwen3-32B
+base_url: ${oc.env:VLLM_LARGE_URL,http://localhost:8001/v1}
+api_key_env: null
+temperature: 0.0
+max_tokens: 4096
+structured_output: response_format
+extra_body:
+  chat_template_kwargs: {enable_thinking: false}
+cache_dir: ${llm_cache_dir}
+max_concurrency: 16

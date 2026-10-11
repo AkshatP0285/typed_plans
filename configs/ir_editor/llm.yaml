@@ -1,0 +1,2 @@
+_target_: tpj.judge.LLMIREditor
+llm: ${models.editor}

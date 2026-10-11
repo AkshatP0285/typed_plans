@@ -1,0 +1,4 @@
+# Flags exactly the injected faults: upper bound for any gate.
+_target_: tpj.gate.simple.OracleGate
+check_plan: true
+check_post: true

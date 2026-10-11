@@ -1,0 +1,10 @@
+# Open-source gate, run locally. The model card is gated: confirm `mode` once you have access.
+_target_: tpj.gate.laya.LayaGate
+model_id: convaiinnovations/layab
+mode: choice_lm          # choice_lm | seq_cls
+device: cuda
+dtype: bfloat16
+label_map: {}            # seq_cls only: model label -> OKAY / ERROR / NEEDS_FORMAT_CHANGE
+threshold: 0.5           # flag when 1 - P(OKAY) >= threshold
+check_plan: true         # pre-execution plan check
+check_post: true         # post-wave outcome check

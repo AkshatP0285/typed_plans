@@ -1,0 +1,5 @@
+# No verification at all (direct baseline).
+_target_: tpj.gate.simple.ConstantGate
+label: OKAY
+check_plan: false
+check_post: false

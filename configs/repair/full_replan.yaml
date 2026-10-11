@@ -1,0 +1,3 @@
+# Baseline: re-plan from scratch with the judge's diagnosis.
+_target_: tpj.repair.FullReplan
+planner: ${planner}

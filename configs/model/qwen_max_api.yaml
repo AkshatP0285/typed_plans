@@ -1,0 +1,12 @@
+# Large Qwen via DashScope (OpenAI-compatible). Teacher for synthetic IR data / strong judge.
+# Check the exact model id in the DashScope console.
+_target_: tpj.llm.client.LLMClient
+name: qwen-max
+model: qwen3.8-max
+base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+api_key_env: DASHSCOPE_API_KEY
+temperature: 0.0
+max_tokens: 4096
+structured_output: response_format
+cache_dir: ${llm_cache_dir}
+max_concurrency: 8

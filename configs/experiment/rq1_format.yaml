@@ -1,0 +1,13 @@
+# @package _global_
+# RQ1: does the typed IR improve planning quality? No faults, no verification.
+#   python scripts/run_agent.py -m +experiment=rq1_format benchmark=taskbench
+defaults:
+  - override /faults: none
+  - override /gate: always_pass
+  - override /ir_editor: none
+  - override /judge: none
+hydra:
+  sweeper:
+    params:
+      plan_format: typed_ir,graph,free_text
+      planner: prompted,finetuned

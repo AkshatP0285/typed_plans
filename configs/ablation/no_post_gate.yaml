@@ -1,0 +1,3 @@
+# @package _global_
+gate:
+  check_post: false

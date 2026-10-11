@@ -1,0 +1,8 @@
+# Used by scripts/run_tau2.py only (tau2 drives the conversation loop).
+domain: airline              # airline | retail | telecom | mock | banking_knowledge
+agent_name: tpj_agent
+agent_llm_label: qwen3-8b    # tau2 requires --agent-llm; our agent uses its own models
+user_llm: gpt-4.1            # user simulator (tau2 / litellm model name)
+num_tasks: 20
+num_trials: 1
+extra_args: []

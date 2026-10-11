@@ -1,0 +1,2 @@
+# Untyped nodes + edges (TaskBench / GNNVerifier style).
+_target_: tpj.ir.formats.GraphFormat

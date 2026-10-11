@@ -1,0 +1,7 @@
+# QLoRA planner. few_shot must match finetune.few_shot used in training.
+_target_: tpj.planner.PromptedPlanner
+llm: ${models.planner_ft}
+format: ${plan_format}
+few_shot: false
+constrained: true
+max_parse_retries: 1

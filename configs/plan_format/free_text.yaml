@@ -1,0 +1,3 @@
+# Numbered plain-text steps, converted to IR by a converter LLM (traced as role 'converter').
+_target_: tpj.ir.formats.FreeTextFormat
+converter: ${models.converter}

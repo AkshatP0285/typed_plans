@@ -1,0 +1,8 @@
+# @package _global_
+# RQ2: selective gating vs no review vs reviewing everything.
+#   python scripts/run_agent.py -m +experiment=rq2_gating benchmark=nestful
+hydra:
+  sweeper:
+    params:
+      gate: always_pass,always_flag,llm_classifier,laya,jev,oracle
+      faults: light,heavy
