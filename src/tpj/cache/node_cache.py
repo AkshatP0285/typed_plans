@@ -17,6 +17,8 @@ def cache_key(tool: str, args: dict[str, Any]) -> str:
 
 
 class NodeCache:
+    """In-memory cache for one task (``fresh()`` gives each task its own)."""
+
     enabled = True
 
     def __init__(self) -> None:
@@ -26,6 +28,7 @@ class NodeCache:
         return type(self)()
 
     def get(self, key: str) -> tuple[bool, Any]:
+        """Returns (hit, value). A separate flag is needed because None is a valid tool output."""
         if key in self._store:
             return True, self._store[key]
         return False, None
@@ -35,6 +38,8 @@ class NodeCache:
 
 
 class NoCache(NodeCache):
+    """Ablation: never hits, never stores."""
+
     enabled = False
 
     def get(self, key: str) -> tuple[bool, Any]:

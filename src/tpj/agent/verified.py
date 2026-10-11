@@ -20,6 +20,12 @@ from tpj.tools.registry import ToolRegistry
 
 
 class VerifiedAgent(Agent):
+    """The proposed system. Each component is pluggable through its Hydra config group.
+
+    The per-task logic lives in :class:`PlanRun`; this class holds the components
+    and executes each wave's tool calls.
+    """
+
     def __init__(
         self,
         planner: Planner,
@@ -55,25 +61,32 @@ class VerifiedAgent(Agent):
         except (PlanParseError, PlanStructureError) as e:
             emit("plan_error", error=str(e))
             return AgentResult(task.id, "plan_error", initial_plan=run.initial_plan, error=str(e))
+
         while not run.done:
             wave = run.next_wave()
             if not wave:
                 break
-            results = await asyncio.gather(*[self._execute(task, run, c, registry) for c in wave])
+            # All calls in a wave are independent of each other, so they run concurrently.
+            results = await asyncio.gather(*[self._execute(task, run, call, registry) for call in wave])
             await run.observe(wave, dict(results))
         return run.result()
 
     async def _execute(self, task: Task, run: PlanRun, call: PendingCall, registry: ToolRegistry) -> tuple[str, Outcome]:
-        sid = call.step.id
-        fault = self.faults.exec_fault(task.id, sid, run.state.nodes[sid].attempts)
+        """Run one tool call, possibly with an injected fault. Never raises.
+
+        Returns ``(step_id, outcome)``. Faults in ``RAISING`` replace the call with an
+        exception; the others let the tool run and then corrupt its output.
+        """
+        step_id = call.step.id
+        fault = self.faults.exec_fault(task.id, step_id, run.state.nodes[step_id].attempts)
         if fault:
-            emit("fault", level="exec", fault_type=fault, step=sid)
+            emit("fault", level="exec", fault_type=fault, step=step_id)
         try:
             if fault in RAISING:
-                self.faults.apply_exec(fault, None, task.id, sid)
+                self.faults.apply_exec(fault, None, task.id, step_id)  # raises
             output = await registry.call(call.step.tool, call.args)
             if fault:
-                output = self.faults.apply_exec(fault, output, task.id, sid)
-            return sid, Outcome(output=output, fault=fault)
-        except Exception as e:  # tool errors are observations, not crashes
-            return sid, Outcome(error=f"{type(e).__name__}: {e}", fault=fault)
+                output = self.faults.apply_exec(fault, output, task.id, step_id)
+            return step_id, Outcome(output=output, fault=fault)
+        except Exception as e:  # tool errors are observations for the judge, not crashes
+            return step_id, Outcome(error=f"{type(e).__name__}: {e}", fault=fault)

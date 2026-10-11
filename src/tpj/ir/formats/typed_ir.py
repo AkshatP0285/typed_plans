@@ -1,3 +1,8 @@
+"""Typed IR plan format: the planner writes our IR directly as JSON (see :class:`~tpj.ir.schema.PlanDraft`).
+
+Data flow is explicit via ``{"$ref": "sK"}`` references, and each step declares its
+return type and safety, which the other two formats lack.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -40,6 +45,6 @@ class TypedIRFormat(PlanFormat):
     async def parse(self, text: str, query: str) -> Plan:
         try:
             draft = PlanDraft.model_validate(parse_json(text))
-        except (ValueError, ValidationError) as e:
-            raise PlanParseError(str(e)) from e
+        except (ValueError, ValidationError) as exc:  # ValueError: not JSON at all
+            raise PlanParseError(str(exc)) from exc
         return Plan.from_draft(draft, query)

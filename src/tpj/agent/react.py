@@ -1,7 +1,13 @@
-"""ReAct-style baseline: native tool calling, no plan, no verification."""
+"""ReAct-style baseline: native tool calling, no plan, no verification.
+
+Loop: ask the model; if it requests tool calls, run them (with any injected
+execution faults) and feed the results back as ``tool`` messages; stop when the
+model answers without calling a tool or after ``max_turns`` model calls.
+"""
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from tpj.agent.base import Agent
 from tpj.benchmarks.base import AgentResult, CallRecord, Task
@@ -14,6 +20,26 @@ SYSTEM = ("You are a tool-calling assistant. Use the tools to complete the user'
           "Call tools until the request is done, then give a short final answer.")
 
 
+def _assistant_message(reply) -> dict[str, Any]:
+    """Echo the model's tool calls back in OpenAI format; the following ``tool`` messages refer to their ids."""
+    tool_calls = []
+    for tool_call in reply.tool_calls:
+        tool_calls.append({
+            "id": tool_call["id"],
+            "type": "function",
+            "function": {"name": tool_call["name"], "arguments": tool_call["arguments"]},
+        })
+    return {"role": "assistant", "content": reply.text or None, "tool_calls": tool_calls}
+
+
+def _parse_arguments(raw: str | None) -> Any:
+    """Tool-call arguments arrive as a JSON string; malformed JSON becomes ``{}`` (the call then usually fails)."""
+    try:
+        return json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return {}
+
+
 class ReActAgent(Agent):
     def __init__(self, llm: LLMClient, faults: FaultInjector, max_turns: int = 15):
         self.llm = llm
@@ -21,47 +47,49 @@ class ReActAgent(Agent):
         self.max_turns = max_turns
 
     async def run(self, task: Task, registry: ToolRegistry) -> AgentResult:
-        msgs: list[dict] = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": task.query}]
-        tools = [t.to_openai() for t in task.tools]
+        messages: list[dict] = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": task.query}]
+        tools = [tool.to_openai() for tool in task.tools]
         calls: list[CallRecord] = []
         answer = None
-        n = 0
+        call_count = 0
         for _ in range(self.max_turns):
-            res = await self.llm.chat(msgs, role="react", tools=tools)
-            if not res.tool_calls:
-                answer = res.text
+            reply = await self.llm.chat(messages, role="react", tools=tools)
+            if not reply.tool_calls:  # the model answered in text: done
+                answer = reply.text
                 break
-            msgs.append({
-                "role": "assistant", "content": res.text or None,
-                "tool_calls": [{"id": tc["id"], "type": "function",
-                                "function": {"name": tc["name"], "arguments": tc["arguments"]}}
-                               for tc in res.tool_calls],
-            })
-            for tc in res.tool_calls:
-                n += 1
-                sid = f"c{n}"
-                try:
-                    args = json.loads(tc["arguments"] or "{}")
-                except json.JSONDecodeError:
-                    args = {}
-                fault = self.faults.exec_fault(task.id, sid, 0)
-                if fault:
-                    emit("fault", level="exec", fault_type=fault, step=sid)
-                try:
-                    if fault in RAISING:
-                        self.faults.apply_exec(fault, None, task.id, sid)
-                    out = await registry.call(tc["name"], args)
-                    if fault:
-                        out = self.faults.apply_exec(fault, out, task.id, sid)
-                    calls.append(CallRecord(sid, tc["name"], args, out))
-                    content = json.dumps(out, default=str)
-                except Exception as e:
-                    calls.append(CallRecord(sid, tc["name"], args, error=str(e)))
-                    content = f"ERROR: {e}"
-                emit("node_result", node_id=sid, tool=tc["name"], status="ok" if calls[-1].error is None else "failed",
-                     fault=fault, gated=False, gate_label=None, flagged=False, attempt=1)
-                msgs.append({"role": "tool", "tool_call_id": tc["id"], "content": content[:8000]})
-        ok_calls = [c for c in calls if c.error is None]
+            messages.append(_assistant_message(reply))
+            for tool_call in reply.tool_calls:
+                call_count += 1
+                call_id = f"c{call_count}"  # stands in for a plan step id in traces and fault seeding
+                content = await self._execute(task, registry, tool_call, call_id, calls)
+                messages.append({"role": "tool", "tool_call_id": tool_call["id"], "content": content[:8000]})
+
+        # ReAct has no "final" steps, so the output of the last successful call is taken as the result.
+        ok_calls = [call for call in calls if call.error is None]
         final = {"last": ok_calls[-1].output} if ok_calls else {}
-        return AgentResult(task.id, "completed" if answer is not None else "failed", final=final,
-                           calls=calls, answer_text=answer)
+        status = "completed" if answer is not None else "failed"  # failed = ran out of turns
+        return AgentResult(task.id, status, final=final, calls=calls, answer_text=answer)
+
+    async def _execute(self, task: Task, registry: ToolRegistry, tool_call: dict[str, Any], call_id: str,
+                       calls: list[CallRecord]) -> str:
+        """Run one tool call, append its :class:`CallRecord` to ``calls``, and return the text shown to the model."""
+        tool_name = tool_call["name"]
+        args = _parse_arguments(tool_call["arguments"])
+        fault = self.faults.exec_fault(task.id, call_id, 0)
+        if fault:
+            emit("fault", level="exec", fault_type=fault, step=call_id)
+        try:
+            if fault in RAISING:
+                # exception/timeout faults raise here, before the tool is called
+                self.faults.apply_exec(fault, None, task.id, call_id)
+            output = await registry.call(tool_name, args)
+            if fault:
+                output = self.faults.apply_exec(fault, output, task.id, call_id)
+            calls.append(CallRecord(call_id, tool_name, args, output))
+            content = json.dumps(output, default=str)
+        except Exception as exc:
+            calls.append(CallRecord(call_id, tool_name, args, error=str(exc)))
+            content = f"ERROR: {exc}"
+        emit("node_result", node_id=call_id, tool=tool_name, status="ok" if calls[-1].error is None else "failed",
+             fault=fault, gated=False, gate_label=None, flagged=False, attempt=1)
+        return content

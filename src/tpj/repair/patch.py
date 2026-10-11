@@ -9,6 +9,8 @@ from tpj.ir.schema import Condition, Plan, Step
 
 
 class EditOp(BaseModel):
+    """Change some fields of an existing step; fields left as None stay unchanged."""
+
     op: Literal["edit"] = "edit"
     id: str
     tool: str | None = None
@@ -35,6 +37,7 @@ class AddOp(BaseModel):
     step: Step
 
 
+# Pydantic picks the right op class from the "op" field when parsing the judge's JSON.
 PatchOp = Annotated[Union[EditOp, RemoveOp, ReplaceOp, AddOp], Field(discriminator="op")]
 
 
@@ -53,30 +56,38 @@ class PatchError(Exception):
 
 
 def apply_patch(plan: Plan, decision: JudgeDecision) -> Plan:
+    """Apply the judge's ops in order to a copy of ``plan``. Raises PatchError on an invalid op."""
     new = plan.model_copy(deep=True)
     for op in decision.ops:
-        idx = {s.id: i for i, s in enumerate(new.steps)}
+        # Recomputed per op because earlier ops may have added or removed steps.
+        position = {step.id: i for i, step in enumerate(new.steps)}
+
         if isinstance(op, AddOp):
-            if op.step.id in idx:
+            if op.step.id in position:
                 raise PatchError(f"add: id {op.step.id} already exists")
             new.steps.append(op.step)
             continue
-        if op.id not in idx:
+
+        if op.id not in position:
             raise PatchError(f"{op.op}: unknown step {op.id}")
-        i = idx[op.id]
+        i = position[op.id]
+
         if isinstance(op, RemoveOp):
             del new.steps[i]
-            new.final = [f for f in new.final if f != op.id]
+            new.final = [step_id for step_id in new.final if step_id != op.id]
         elif isinstance(op, ReplaceOp):
-            new.steps[i] = op.step.model_copy(update={"id": op.id})
-        else:
-            upd = {k: v for k, v in op.model_dump(exclude={"op", "id", "clear_when"}).items() if v is not None}
-            if "when" in upd:
-                upd["when"] = op.when
-            step = new.steps[i].model_copy(update=upd)
+            new.steps[i] = op.step.model_copy(update={"id": op.id})  # keep the id so refs still point here
+        else:  # EditOp: overwrite only the fields the judge filled in
+            changes = {field: value
+                       for field, value in op.model_dump(exclude={"op", "id", "clear_when"}).items()
+                       if value is not None}
+            if "when" in changes:
+                changes["when"] = op.when  # keep it a Condition object, not the dumped dict
+            step = new.steps[i].model_copy(update=changes)
             if op.clear_when:
                 step.when = None
             new.steps[i] = step
+
     if decision.final is not None:
         new.final = list(decision.final)
     return new
