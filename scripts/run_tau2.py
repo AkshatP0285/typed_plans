@@ -16,24 +16,38 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 
 
+def _tau2_cli_args(bench: DictConfig) -> list[str]:
+    """Command line for ``tau2 run``, built from the ``benchmark=tau2`` config group."""
+    args = ["tau2", "run",
+            "--domain", bench.domain,
+            "--agent", bench.agent_name,
+            "--agent-llm", bench.agent_llm_label,
+            "--user-llm", bench.user_llm,
+            "--num-trials", str(bench.num_trials)]
+    if bench.num_tasks:  # null / 0: leave --num-tasks out and use tau2's default
+        args += ["--num-tasks", str(bench.num_tasks)]
+    args += list(bench.extra_args)
+    return args
+
+
 @hydra.main(version_base="1.3", config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
+    # Imported here so tau2 (an optional dependency) is only needed when this script runs.
     from tpj.benchmarks.tau2 import register
 
-    b = cfg.benchmark
+    bench = cfg.benchmark
     out_dir = Path(HydraConfig.get().runtime.output_dir)
     register(
         build_agent=lambda: instantiate(cfg.agent, _convert_="all"),
         responder=instantiate(cfg.models.responder, _convert_="all"),
-        name=b.agent_name,
+        name=bench.agent_name,
         trace_path=str(out_dir / "trace.jsonl"),
     )
     from tau2.cli import main as tau2_main
 
-    sys.argv = ["tau2", "run", "--domain", b.domain, "--agent", b.agent_name,
-                "--agent-llm", b.agent_llm_label, "--user-llm", b.user_llm,
-                "--num-trials", str(b.num_trials), *(["--num-tasks", str(b.num_tasks)] if b.num_tasks else []),
-                *b.extra_args]
+    # tau2 only exposes a CLI entry point, so we fake its argv and call it in-process
+    # (in-process so it can find the agent we just registered).
+    sys.argv = _tau2_cli_args(bench)
     tau2_main()
 
 

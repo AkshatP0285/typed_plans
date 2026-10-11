@@ -4,6 +4,16 @@ The run decides *what* to execute next (``next_wave``) and reacts to outcomes
 (``observe``); the caller decides *how* tools are executed. The local agent
 executes against a tool registry, while the tau2 adapter turns each wave into
 one assistant message with parallel tool calls.
+
+Typical driver loop (see ``VerifiedAgent.run``)::
+
+    run = PlanRun(agent, task)
+    await run.prepare()                  # plan -> gate -> (edit) -> final plan
+    while not run.done:
+        wave = run.next_wave()           # steps whose inputs are ready
+        outcomes = <execute the wave>    # caller runs the tools
+        await run.observe(wave, outcomes)  # gate -> (judge -> repair) -> cache
+    return run.result()
 """
 from __future__ import annotations
 
@@ -15,7 +25,7 @@ from tpj.benchmarks.base import AgentResult, CallRecord, Task
 from tpj.cache.node_cache import cache_key
 from tpj.eval.trace import emit
 from tpj.executor.state import ExecutionState
-from tpj.gate.base import GateInput
+from tpj.gate.base import GateInput, GateOutput
 from tpj.ir.dag import PlanStructureError, check_structure
 from tpj.ir.refs import RefResolutionError, resolve
 from tpj.ir.schema import Plan, Step
@@ -28,13 +38,17 @@ if TYPE_CHECKING:
 
 @dataclass
 class PendingCall:
+    """A step that is ready to execute, with its references already resolved."""
+
     step: Step
     args: dict[str, Any]
-    key: str
+    key: str  # cache key (tool + resolved args)
 
 
 @dataclass
 class Outcome:
+    """What happened when a PendingCall was executed."""
+
     output: Any = None
     error: str | None = None
     fault: str | None = None  # injected fault label, if any
@@ -42,44 +56,42 @@ class Outcome:
 
 class PlanRun:
     def __init__(self, agent: "VerifiedAgent", task: Task):
-        self.a = agent
+        self.agent = agent  # holds the components (planner, gate, judge, ...) and limits
         self.task = task
         self.plan: Plan | None = None
-        self.initial_plan: Plan | None = None
+        self.initial_plan: Plan | None = None  # plan before any edits, for analysis
         self.state = ExecutionState()
-        self.cache = agent.cache.fresh()
+        self.cache = agent.cache.fresh()  # every task starts with an empty cache
         self.calls: list[CallRecord] = []
         self.repairs = 0
         self.waves = 0
-        self.aborted: str | None = None
+        self.aborted: str | None = None  # reason, once the judge gives up on the task
 
     # ------------------------------------------------------------ planning
     async def prepare(self) -> Plan:
-        """Plan, inject plan faults, then gate + edit before execution."""
-        a, task = self.a, self.task
-        plan = await a.planner.plan(task)
-        plan, plan_faults = a.faults.corrupt_plan(plan, task.tools, task.id)
+        """Plan, inject plan faults, then gate + edit before execution.
+
+        The gate and the structure check get up to ``max_plan_edits`` chances to
+        send the plan to the IR editor. A plan that is still structurally broken
+        afterwards raises ``PlanStructureError`` and ends the task.
+        """
+        agent, task = self.agent, self.task
+        plan = await agent.planner.plan(task)
+        plan, plan_faults = agent.faults.corrupt_plan(plan, task.tools, task.id)
         self.initial_plan = plan.model_copy(deep=True)
 
-        for round_ in range(a.max_plan_edits + 1):
-            structure_err = None
-            try:
-                check_structure(plan)
-            except PlanStructureError as e:
-                structure_err = str(e)
-                emit("plan_structure_error", round=round_, error=structure_err)
-            flagged, verdict = False, None
-            if a.gate.enabled("plan"):
-                out = await a.gate.classify(GateInput(
-                    phase="plan", query=task.query, plan=plan, tools=task.tools,
-                    meta={"fault": plan_faults if round_ == 0 else []},
-                ))
-                flagged, verdict = out.flagged, out.label
-            if not (flagged or structure_err) or not a.ir_editor.enabled or round_ == a.max_plan_edits:
+        for round_ in range(agent.max_plan_edits + 1):
+            structure_error = self._structure_error(plan, round_)
+            # Fault labels describe the original plan only, so only round 0 carries them.
+            gate_flagged, gate_label = await self._gate_plan(plan, plan_faults if round_ == 0 else [])
+
+            needs_edit = gate_flagged or structure_error is not None
+            last_round = round_ == agent.max_plan_edits
+            if not needs_edit or not agent.ir_editor.enabled or last_round:
                 break
-            plan = await a.ir_editor.revise(
-                task, plan, verdict=verdict or "STRUCTURE_ERROR",
-                extra=f"Structural problem: {structure_err}" if structure_err else "",
+            plan = await agent.ir_editor.revise(
+                task, plan, verdict=gate_label or "STRUCTURE_ERROR",
+                extra=f"Structural problem: {structure_error}" if structure_error else "",
             )
             emit("plan_edit", round=round_)
 
@@ -89,136 +101,241 @@ class PlanRun:
         emit("plan_final", plan=plan.model_dump())
         return plan
 
+    @staticmethod
+    def _structure_error(plan: Plan, round_: int) -> str | None:
+        """Error message if the plan cannot be executed as is (bad refs, cycles, ...)."""
+        try:
+            check_structure(plan)
+        except PlanStructureError as e:
+            emit("plan_structure_error", round=round_, error=str(e))
+            return str(e)
+        return None
+
+    async def _gate_plan(self, plan: Plan, faults: list[dict]) -> tuple[bool, str | None]:
+        """Ask the gate about the whole plan. Returns (flagged, label)."""
+        if not self.agent.gate.enabled("plan"):
+            return False, None
+        verdict = await self.agent.gate.classify(GateInput(
+            phase="plan", query=self.task.query, plan=plan, tools=self.task.tools,
+            meta={"fault": faults},
+        ))
+        return verdict.flagged, verdict.label
+
     # ------------------------------------------------------------ scheduling
     @property
     def done(self) -> bool:
-        return self.aborted is not None or self.waves >= self.a.max_waves or not self._ready()
+        return self.aborted is not None or self.waves >= self.agent.max_waves or not self._ready_steps()
 
-    def _ready(self) -> list[Step]:
+    def _ready_steps(self) -> list[Step]:
+        """Pending steps whose dependencies have all finished (ok, failed or skipped)."""
         assert self.plan is not None
         nodes = self.state.nodes
-        return [s for s in self.plan.steps
-                if nodes[s.id].status == "pending" and all(nodes[d].status != "pending" for d in s.deps())]
+        ready = []
+        for step in self.plan.steps:
+            if nodes[step.id].status != "pending":
+                continue
+            if all(nodes[dep].status != "pending" for dep in step.deps()):
+                ready.append(step)
+        return ready
 
     def next_wave(self) -> list[PendingCall]:
-        """Resolve ready steps (conditions, upstream failures, cache hits) and return the next wave."""
-        if self.aborted is not None or self.waves >= self.a.max_waves:
+        """Return the next batch of tool calls to execute, or ``[]`` if nothing is left.
+
+        Some ready steps need no tool call: their upstream failed, their ``when``
+        condition is false, their references cannot be resolved, or the cache
+        already has their output. Those are settled right here. Settling them can
+        make further steps ready, so we loop until there is something to execute.
+        """
+        if self.aborted is not None or self.waves >= self.agent.max_waves:
             return []
         while True:
-            ready = self._ready()
+            ready = self._ready_steps()
             if not ready:
                 return []
-            calls: list[PendingCall] = []
-            progressed = False
             outputs = self.state.outputs()
-            for s in ready:
-                node = self.state.nodes[s.id]
-                failed = [d for d in s.deps() if self.state.nodes[d].status == "failed"]
-                if failed:
-                    node.status, node.error = "failed", f"upstream failed: {failed}"
-                    progressed = True
-                    continue
-                try:
-                    if s.when is not None and resolve({"$ref": s.when.ref, "path": s.when.path}, outputs) != s.when.equals:
-                        node.status = "skipped"
-                        progressed = True
-                        emit("node_skipped", node_id=s.id)
-                        continue
-                    args = resolve(s.args, outputs, self.a.lenient_paths)
-                except RefResolutionError as e:
-                    node.status, node.error = "failed", f"argument resolution: {e}"
-                    progressed = True
-                    continue
-                key = cache_key(s.tool, args)
-                hit, value = self.cache.get(key)
-                if hit:
-                    node.status, node.output, node.args, node.cached = "ok", value, args, True
-                    self.calls.append(CallRecord(s.id, s.tool, args, value, cached=True))
-                    emit("cache_hit", node_id=s.id, tool=s.tool)
-                    progressed = True
-                    continue
-                calls.append(PendingCall(s, args, key))
-            if calls:
-                chosen = set(self.a.scheduler.select([c.step.id for c in calls]))
-                self.waves += 1
-                wave = [c for c in calls if c.step.id in chosen]
-                emit("wave", index=self.waves, nodes=[c.step.id for c in wave])
-                return wave
-            if not progressed:
+            to_execute: list[PendingCall] = []
+            settled_any = False
+            for step in ready:
+                call = self._prepare_call(step, outputs)
+                if call is None:
+                    settled_any = True
+                else:
+                    to_execute.append(call)
+            if to_execute:
+                return self._start_wave(to_execute)
+            if not settled_any:  # safety net against looping forever
                 return []
+
+    def _prepare_call(self, step: Step, outputs: dict[str, Any]) -> PendingCall | None:
+        """Turn a ready step into a call, or settle it without running and return None."""
+        node = self.state.nodes[step.id]
+
+        failed_deps = [dep for dep in step.deps() if self.state.nodes[dep].status == "failed"]
+        if failed_deps:
+            node.status, node.error = "failed", f"upstream failed: {failed_deps}"
+            return None
+
+        try:
+            if not self._condition_holds(step, outputs):
+                node.status = "skipped"
+                emit("node_skipped", node_id=step.id)
+                return None
+            args = resolve(step.args, outputs, self.agent.lenient_paths)
+        except RefResolutionError as e:
+            node.status, node.error = "failed", f"argument resolution: {e}"
+            return None
+
+        key = cache_key(step.tool, args)
+        hit, cached_output = self.cache.get(key)
+        if hit:
+            node.status, node.output, node.args, node.cached = "ok", cached_output, args, True
+            self.calls.append(CallRecord(step.id, step.tool, args, cached_output, cached=True))
+            emit("cache_hit", node_id=step.id, tool=step.tool)
+            return None
+
+        return PendingCall(step, args, key)
+
+    @staticmethod
+    def _condition_holds(step: Step, outputs: dict[str, Any]) -> bool:
+        """True if the step has no ``when`` condition or the condition is met."""
+        if step.when is None:
+            return True
+        value = resolve({"$ref": step.when.ref, "path": step.when.path}, outputs)
+        return value == step.when.equals
+
+    def _start_wave(self, calls: list[PendingCall]) -> list[PendingCall]:
+        """Let the scheduler pick which calls run now (all of them, or one when sequential)."""
+        chosen = set(self.agent.scheduler.select([call.step.id for call in calls]))
+        wave = [call for call in calls if call.step.id in chosen]
+        self.waves += 1
+        emit("wave", index=self.waves, nodes=[call.step.id for call in wave])
+        return wave
 
     # ------------------------------------------------------------ verification
     async def observe(self, wave: list[PendingCall], outcomes: dict[str, Outcome]) -> None:
-        a, task = self.a, self.task
+        """React to an executed wave: gate the outputs, repair flagged steps, cache good outputs.
+
+        ``outcomes`` maps step id -> Outcome for every call in ``wave``.
+        """
         assert self.plan is not None
-        for c in wave:
-            o = outcomes[c.step.id]
-            node = self.state.nodes[c.step.id]
+        self._record_outcomes(wave, outcomes)
+
+        succeeded = [call for call in wave if outcomes[call.step.id].error is None]
+        verdicts = await self._gate_outputs(succeeded, outcomes)
+        flags = self._collect_flags(wave, outcomes, verdicts)
+
+        # Outputs that ran fine and were not flagged are safe to cache.
+        flagged_ids = {flag.node_id for flag in flags}
+        cleared = {call.step.id for call in succeeded if call.step.id not in flagged_ids}
+
+        agent = self.agent
+        if flags and agent.judge.enabled and self.repairs < agent.max_repairs:
+            cleared |= await self._judge_and_repair(flags, flagged_ids)
+
+        self._cache_outputs(wave, outcomes, cleared)
+
+    def _record_outcomes(self, wave: list[PendingCall], outcomes: dict[str, Outcome]) -> None:
+        """Store each call's result in the execution state and the call log."""
+        for call in wave:
+            outcome = outcomes[call.step.id]
+            node = self.state.nodes[call.step.id]
             node.attempts += 1
-            node.args, node.fault = c.args, o.fault
-            node.status = "failed" if o.error else "ok"
-            node.output, node.error = o.output, o.error
-            self.calls.append(CallRecord(c.step.id, c.step.tool, c.args, o.output, o.error))
+            node.args, node.fault = call.args, outcome.fault
+            node.status = "failed" if outcome.error else "ok"
+            node.output, node.error = outcome.output, outcome.error
+            self.calls.append(CallRecord(call.step.id, call.step.tool, call.args, outcome.output, outcome.error))
 
-        ok = [c for c in wave if outcomes[c.step.id].error is None]
-        gated: dict[str, Any] = {}
-        if ok and a.gate.enabled("post"):
-            results = await asyncio.gather(*[
-                a.gate.classify(GateInput(
-                    phase="post", query=task.query, plan=self.plan, tools=task.tools, step=c.step,
-                    args=c.args, output=outcomes[c.step.id].output,
-                    meta={"fault": outcomes[c.step.id].fault},
-                )) for c in ok
-            ])
-            gated = {c.step.id: r for c, r in zip(ok, results)}
+    async def _gate_outputs(self, succeeded: list[PendingCall],
+                            outcomes: dict[str, Outcome]) -> dict[str, GateOutput]:
+        """Run the post-execution gate on every successful call, in parallel.
 
+        Failed calls are not gated: an exception is already a clear signal.
+        """
+        if not succeeded or not self.agent.gate.enabled("post"):
+            return {}
+        inputs = [
+            GateInput(
+                phase="post", query=self.task.query, plan=self.plan, tools=self.task.tools, step=call.step,
+                args=call.args, output=outcomes[call.step.id].output,
+                meta={"fault": outcomes[call.step.id].fault},
+            )
+            for call in succeeded
+        ]
+        verdicts = await asyncio.gather(*[self.agent.gate.classify(inp) for inp in inputs])
+        return {call.step.id: verdict for call, verdict in zip(succeeded, verdicts)}
+
+    def _collect_flags(self, wave: list[PendingCall], outcomes: dict[str, Outcome],
+                       verdicts: dict[str, GateOutput]) -> list[Flag]:
+        """A step is flagged if its tool raised or the gate flagged its output."""
         flags: list[Flag] = []
-        for c in wave:
-            o = outcomes[c.step.id]
-            g = gated.get(c.step.id)
-            if o.error is not None:
-                flags.append(Flag(c.step.id, f"tool error: {o.error}", c.args, None))
-            elif g is not None and g.flagged:
-                flags.append(Flag(c.step.id, f"verifier label {g.label} {g.probs}", c.args, o.output))
-            emit("node_result", node_id=c.step.id, tool=c.step.tool, safety=c.step.safety,
-                 status="failed" if o.error else "ok", fault=o.fault,
-                 gated=g is not None, gate_label=g.label if g else None,
-                 flagged=(o.error is not None) or bool(g and g.flagged), attempt=self.state.nodes[c.step.id].attempts)
+        for call in wave:
+            outcome = outcomes[call.step.id]
+            verdict = verdicts.get(call.step.id)  # None when the step was not gated
+            failed = outcome.error is not None
+            gate_flagged = verdict is not None and verdict.flagged
 
-        flagged_ids = {f.node_id for f in flags}
-        cleared = {c.step.id for c in ok if c.step.id not in flagged_ids}
+            if failed:
+                flags.append(Flag(call.step.id, f"tool error: {outcome.error}", call.args, None))
+            elif gate_flagged:
+                flags.append(Flag(call.step.id, f"verifier label {verdict.label} {verdict.probs}",
+                                  call.args, outcome.output))
 
-        if flags and a.judge.enabled and self.repairs < a.max_repairs:
-            self.repairs += 1
-            decision = await a.judge.review(task, self.plan, flags, self.state.summary())
-            if decision.verdict == "false_alarm":
-                cleared |= {f.node_id for f in flags if self.state.nodes[f.node_id].status == "ok"}
-            try:
-                new_plan, dirty = await a.repair.apply(task, self.plan, decision, flagged_ids)
-            except AbortTask as e:
-                self.aborted = str(e) or "judge aborted"
-                emit("abort", reason=self.aborted)
-                new_plan, dirty = self.plan, set()
-            if new_plan is not self.plan:
-                self.plan = new_plan
-                self.state.sync(new_plan)
-            self.state.reset(dirty)
-            emit("intervention", flagged=sorted(flagged_ids), verdict=decision.verdict, dirty=sorted(dirty))
+            emit("node_result", node_id=call.step.id, tool=call.step.tool, safety=call.step.safety,
+                 status="failed" if failed else "ok", fault=outcome.fault,
+                 gated=verdict is not None, gate_label=verdict.label if verdict else None,
+                 flagged=failed or gate_flagged, attempt=self.state.nodes[call.step.id].attempts)
+        return flags
 
-        for c in wave:
-            if c.step.id in cleared and self.state.nodes.get(c.step.id) and self.state.nodes[c.step.id].status == "ok":
-                self.cache.put(c.key, outcomes[c.step.id].output)
+    async def _judge_and_repair(self, flags: list[Flag], flagged_ids: set[str]) -> set[str]:
+        """Ask the judge about flagged steps and apply its repair.
+
+        Returns the flagged steps the judge cleared (a ``false_alarm`` verdict),
+        so the caller can cache them too.
+        """
+        assert self.plan is not None
+        self.repairs += 1
+        decision = await self.agent.judge.review(self.task, self.plan, flags, self.state.summary())
+
+        cleared: set[str] = set()
+        if decision.verdict == "false_alarm":
+            cleared = {flag.node_id for flag in flags if self.state.nodes[flag.node_id].status == "ok"}
+
+        try:
+            new_plan, dirty = await self.agent.repair.apply(self.task, self.plan, decision, flagged_ids)
+        except AbortTask as e:
+            self.aborted = str(e) or "judge aborted"
+            emit("abort", reason=self.aborted)
+            new_plan, dirty = self.plan, set()
+
+        if new_plan is not self.plan:
+            self.plan = new_plan
+            self.state.sync(new_plan)  # add new steps, drop removed ones
+        self.state.reset(dirty)  # "dirty" steps go back to pending and will run again
+        emit("intervention", flagged=sorted(flagged_ids), verdict=decision.verdict, dirty=sorted(dirty))
+        return cleared
+
+    def _cache_outputs(self, wave: list[PendingCall], outcomes: dict[str, Outcome], cleared: set[str]) -> None:
+        """Cache cleared outputs, unless the repair removed the step or reset it to pending."""
+        for call in wave:
+            node = self.state.nodes.get(call.step.id)
+            if call.step.id in cleared and node is not None and node.status == "ok":
+                self.cache.put(call.key, outcomes[call.step.id].output)
 
     # ------------------------------------------------------------ result
     def result(self) -> AgentResult:
+        """Completed only if not aborted, every final step is ok/skipped and nothing is still pending."""
         assert self.plan is not None
         nodes = self.state.nodes
-        final = {f: nodes[f].output for f in self.plan.final if f in nodes}
-        ok = self.aborted is None and all(nodes[f].status in ("ok", "skipped") for f in self.plan.final if f in nodes)
-        ok = ok and not any(n.status == "pending" for n in nodes.values())
+        final_ids = [step_id for step_id in self.plan.final if step_id in nodes]
+        final = {step_id: nodes[step_id].output for step_id in final_ids}
+
+        finals_ok = all(nodes[step_id].status in ("ok", "skipped") for step_id in final_ids)
+        nothing_pending = not any(node.status == "pending" for node in nodes.values())
+        completed = self.aborted is None and finals_ok and nothing_pending
+
         return AgentResult(
             task_id=self.task.id,
-            status="completed" if ok else "failed",
+            status="completed" if completed else "failed",
             final=final,
             calls=self.calls,
             plan=self.plan,

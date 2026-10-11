@@ -12,10 +12,16 @@ from tpj.repair.patch import JudgeDecision, PatchError, apply_patch
 
 
 class AbortTask(Exception):
-    pass
+    """The judge decided the task cannot be completed."""
 
 
 class RepairStrategy(ABC):
+    """Turns a JudgeDecision into a new plan.
+
+    Verdicts: ``repair`` (apply the judge's ops), ``retry`` (re-run the flagged
+    steps unchanged), ``false_alarm`` (nothing to do), ``abort`` (raise AbortTask).
+    """
+
     @abstractmethod
     async def apply(self, task: Task, plan: Plan, decision: JudgeDecision, flagged: set[str]) -> tuple[Plan, set[str]]:
         """Return the new plan and the set of step ids that must (re-)run."""
@@ -31,6 +37,7 @@ class LocalRepair(RepairStrategy):
             return plan, set()
         if decision.verdict == "retry" or not decision.ops:
             return plan, flagged | descendants(plan, flagged)
+        # An invalid patch falls back to a retry rather than failing the task.
         try:
             new = apply_patch(plan, decision)
             check_structure(new)

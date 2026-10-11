@@ -23,6 +23,8 @@ from tpj.repair.patch import JudgeDecision
 
 @dataclass
 class Flag:
+    """A step the gate flagged (or whose tool raised), passed to the judge."""
+
     node_id: str
     reason: str  # gate label or exception message
     args: Any = None
@@ -58,6 +60,8 @@ Reply with the full corrected plan as JSON."""
 
 
 class LLMIREditor:
+    """Pre-execution: rewrites the whole plan when the gate flags it (nothing has run yet)."""
+
     enabled = True
 
     def __init__(self, llm: LLMClient):
@@ -116,6 +120,8 @@ Reply as JSON with:
 
 
 class LLMJudge:
+    """Post-execution: diagnoses flagged steps and returns a JudgeDecision with patch ops."""
+
     enabled = True
 
     def __init__(self, llm: LLMClient, max_output_chars: int = 1500):
@@ -123,14 +129,18 @@ class LLMJudge:
         self.max_output_chars = max_output_chars
 
     async def review(self, task: Task, plan: Plan, flags: list[Flag], status: dict[str, Any]) -> JudgeDecision:
-        status_txt = "\n".join(
-            f"{sid}: {st['status']} -> {_clip(st.get('output') if st.get('error') is None else st['error'], 400)}"
-            for sid, st in status.items()
-        )
-        flags_txt = "\n".join(
-            f"{f.node_id}: {f.reason}\n  args: {_clip(f.args, 600)}\n  output: {_clip(f.output, self.max_output_chars)}"
-            for f in flags
-        )
+        status_lines = []
+        for step_id, node in status.items():
+            shown = node.get("output") if node.get("error") is None else node["error"]
+            status_lines.append(f"{step_id}: {node['status']} -> {_clip(shown, 400)}")
+        status_txt = "\n".join(status_lines)
+
+        flag_lines = []
+        for flag in flags:
+            flag_lines.append(f"{flag.node_id}: {flag.reason}\n  args: {_clip(flag.args, 600)}"
+                              f"\n  output: {_clip(flag.output, self.max_output_chars)}")
+        flags_txt = "\n".join(flag_lines)
+
         prompt = JUDGE_PROMPT.format(
             rules=IR_RULES, tools=_tools_json(task), query=task.query,
             plan=plan.to_prompt_json(), status=status_txt or "(nothing yet)", flags=flags_txt,
@@ -140,6 +150,7 @@ class LLMJudge:
         try:
             decision = JudgeDecision.model_validate(parse_json(res.text))
         except (ValueError, ValidationError) as e:
+            # An unreadable reply is treated as "retry" so the run can continue.
             emit("judge_parse_error", error=str(e), text=res.text[:2000])
             decision = JudgeDecision(verdict="retry", diagnosis=f"unparseable judge output: {e}")
         emit("judge", flagged=[f.node_id for f in flags], verdict=decision.verdict,

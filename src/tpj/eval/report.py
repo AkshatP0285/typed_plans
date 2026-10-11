@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+# (dotted path into metrics.json, column name in the table)
 COLUMNS = [
     ("success_rate", "SR"),
     ("avg_tokens.total", "tokens"),
@@ -20,37 +21,52 @@ COLUMNS = [
 ]
 
 
-def _get(d: dict[str, Any], dotted: str) -> Any:
+def _get(data: dict[str, Any], dotted: str) -> Any:
+    """``_get(m, "gate_node.f1") == m["gate_node"]["f1"]``, or ``None`` if any key is missing."""
+    value: Any = data
     for part in dotted.split("."):
-        if not isinstance(d, dict) or part not in d:
+        if not isinstance(value, dict) or part not in value:
             return None
-        d = d[part]
-    return d
+        value = value[part]
+    return value
+
+
+def _read_overrides(run_dir: Path) -> str:
+    """The Hydra command-line overrides of a run (e.g. ``gate=jev seed=1``), or "" if none were saved."""
+    overrides_path = run_dir / ".hydra" / "overrides.yaml"
+    if not overrides_path.exists():
+        return ""
+    import yaml
+
+    return " ".join(yaml.safe_load(overrides_path.read_text()) or [])
 
 
 def collect(root: str | Path) -> list[dict[str, Any]]:
+    """One row per ``metrics.json`` found under ``root``: run dir, overrides, then the :data:`COLUMNS`."""
     rows = []
-    for mpath in sorted(Path(root).rglob("metrics.json")):
-        run_dir = mpath.parent
-        overrides_path = run_dir / ".hydra" / "overrides.yaml"
-        overrides = ""
-        if overrides_path.exists():
-            import yaml
-
-            overrides = " ".join(yaml.safe_load(overrides_path.read_text()) or [])
-        metrics = json.loads(mpath.read_text())
-        row = {"run": str(run_dir.relative_to(root)) if run_dir != Path(root) else ".", "overrides": overrides}
-        for key, name in COLUMNS:
-            row[name] = _get(metrics, key)
+    for metrics_path in sorted(Path(root).rglob("metrics.json")):
+        run_dir = metrics_path.parent
+        overrides = _read_overrides(run_dir)
+        metrics = json.loads(metrics_path.read_text())
+        run_name = str(run_dir.relative_to(root)) if run_dir != Path(root) else "."
+        row = {"run": run_name, "overrides": overrides}
+        for dotted_key, column in COLUMNS:
+            row[column] = _get(metrics, dotted_key)
         rows.append(row)
     return rows
+
+
+def _format_cell(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.3f}"
+    return "" if value is None else str(value)
 
 
 def to_markdown(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "(no runs found)"
-    cols = list(rows[0])
-    fmt = lambda v: f"{v:.3f}" if isinstance(v, float) else ("" if v is None else str(v))  # noqa: E731
-    lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
-    lines += ["| " + " | ".join(fmt(r[c]) for c in cols) + " |" for r in rows]
+    columns = list(rows[0])
+    lines = ["| " + " | ".join(columns) + " |", "|" + "---|" * len(columns)]
+    for row in rows:
+        lines.append("| " + " | ".join(_format_cell(row[column]) for column in columns) + " |")
     return "\n".join(lines)

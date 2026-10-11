@@ -14,6 +14,8 @@ query ─▶ planner ─▶ IR ─▶ gate(plan) ──flag──▶ LLM IR edit
                            └──── next wave ◀── cache ◀── re-run dirty steps ◀─┘
 ```
 
+New to the code? Start with [docs/CODE_WALKTHROUGH.md](docs/CODE_WALKTHROUGH.md). It gives a reading order, explains how Hydra builds the objects and how tracing works, and follows one task through the code.
+
 ## Layout
 
 ```

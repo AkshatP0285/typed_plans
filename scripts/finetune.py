@@ -11,9 +11,11 @@ from omegaconf import DictConfig
 
 @hydra.main(version_base="1.3", config_path="../configs", config_name="finetune")
 def main(cfg: DictConfig) -> None:
-    from tpj.finetune.sft import train
+    from tpj.finetune.sft import train  # imported lazily: pulls in torch / transformers / trl
 
-    train(cfg, instantiate(cfg.plan_format, _convert_="all"))
+    # cfg.plan_format picks the format whose rendering the model learns to produce (typed_ir by default)
+    plan_format = instantiate(cfg.plan_format, _convert_="all")
+    train(cfg, plan_format)
 
 
 if __name__ == "__main__":

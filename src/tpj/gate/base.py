@@ -54,9 +54,9 @@ class GateInput:
 
 @dataclass
 class GateOutput:
-    label: str
+    label: str  # most likely label
     probs: dict[str, float]
-    flagged: bool
+    flagged: bool  # True -> send to the LLM editor / judge
 
 
 def _clip(value: Any, limit: int) -> str:
@@ -83,6 +83,8 @@ def render_state(inp: GateInput, max_chars: int = 6000) -> str:
 
 
 class Gate(ABC):
+    """Base class: subclasses implement ``_classify``; callers use ``classify``."""
+
     name = "gate"
 
     def __init__(self, threshold: float = 0.5, check_plan: bool = True, check_post: bool = True,
@@ -96,11 +98,13 @@ class Gate(ABC):
         return self.check_plan if phase == "plan" else self.check_post
 
     async def classify(self, inp: GateInput) -> GateOutput:
-        t0 = time.time()
-        probs = await self._classify(inp)
-        probs = {k: float(probs.get(k, 0.0)) for k in LABELS[inp.phase]}
+        """Shared wrapper around :meth:`_classify`: normalise, apply the threshold, trace."""
+        start = time.time()
+        raw_probs = await self._classify(inp)
+        # Keep only this phase's labels (missing ones count as 0) and make them sum to 1.
+        probs = {label: float(raw_probs.get(label, 0.0)) for label in LABELS[inp.phase]}
         total = sum(probs.values()) or 1.0
-        probs = {k: v / total for k, v in probs.items()}
+        probs = {label: p / total for label, p in probs.items()}
         label = max(probs, key=probs.get)
         flagged = (1.0 - probs[OKAY]) >= self.threshold
         emit(
@@ -111,9 +115,10 @@ class Gate(ABC):
             label=label,
             probs=probs,
             flagged=flagged,
-            latency=time.time() - t0,
+            latency=time.time() - start,
         )
         return GateOutput(label, probs, flagged)
 
     @abstractmethod
-    async def _classify(self, inp: GateInput) -> dict[str, float]: ...
+    async def _classify(self, inp: GateInput) -> dict[str, float]:
+        """Implemented by each gate: label -> score (need not be normalised)."""
