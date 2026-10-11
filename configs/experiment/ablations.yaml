@@ -1,0 +1,9 @@
+# @package _global_
+# Remove one component at a time.
+#   python scripts/run_agent.py -m +experiment=ablations benchmark=nestful
+defaults:
+  - override /faults: light
+hydra:
+  sweeper:
+    params:
+      +ablation: full,no_pre_gate,no_post_gate,no_plan_edit,no_judge,full_replan,no_cache,sequential

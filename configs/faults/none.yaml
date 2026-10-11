@@ -1,0 +1,4 @@
+_target_: tpj.faults.FaultInjector
+plan_rate: 0.0
+exec_rate: 0.0
+seed: ${seed}

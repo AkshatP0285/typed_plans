@@ -1,0 +1,42 @@
+# Main config. Every component is a config group; swap any of them from the CLI,
+# e.g. gate=jev judge=none benchmark=nestful. See README for the full list.
+defaults:
+  # --- models (all OpenAI-compatible; vLLM for open models) ---
+  - model@models.planner: qwen3_8b_vllm
+  - model@models.planner_ft: planner_lora
+  - model@models.editor: qwen3_32b_vllm
+  - model@models.judge: qwen3_32b_vllm
+  - model@models.gate_llm: qwen3_8b_vllm
+  - model@models.converter: qwen3_8b_vllm
+  - model@models.react: qwen3_8b_vllm
+  - model@models.responder: qwen3_8b_vllm
+  # --- pipeline components (Figure 1) ---
+  - plan_format: typed_ir
+  - planner: prompted
+  - gate: laya
+  - ir_editor: llm
+  - judge: llm
+  - repair: local
+  - scheduler: waves
+  - cache: node
+  - faults: none
+  # --- what to run on ---
+  - benchmark: toy
+  - agent: verified
+  - _self_
+
+seed: 0
+limit: null              # cap the number of tasks (quick runs)
+task_concurrency: 8      # tasks evaluated concurrently
+llm_cache_dir: .cache/llm
+
+run_name: ${hydra:runtime.choices.agent}-${hydra:runtime.choices.benchmark}-${hydra:runtime.choices.gate}
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}_${run_name}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}_${hydra.job.override_dirname}
+  job:
+    chdir: false

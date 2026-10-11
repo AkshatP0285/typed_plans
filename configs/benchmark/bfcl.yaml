@@ -1,0 +1,6 @@
+_target_: tpj.benchmarks.bfcl.BFCLBenchmark
+data_dir: ${oc.env:BFCL_DATA_DIR,third_party/gorilla/berkeley-function-call-leaderboard/bfcl_eval/data}
+version: v4
+categories: [simple_python, multiple, parallel, parallel_multiple]
+limit: 300
+sample_seed: ${seed}

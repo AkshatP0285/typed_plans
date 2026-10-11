@@ -1,0 +1,9 @@
+# TypeSafe AI JEV over HTTP (needs TYPESAFE_API_KEY).
+_target_: tpj.gate.jev.JEVGate
+model: jev-latest
+base_url: https://api.typesafe.ai/v1
+api_key_env: TYPESAFE_API_KEY
+cache_dir: .cache/jev
+threshold: 0.5
+check_plan: true
+check_post: true

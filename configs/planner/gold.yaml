@@ -1,0 +1,2 @@
+# Oracle: the benchmark's reference plan (upper bound / smoke tests).
+_target_: tpj.planner.GoldPlanner

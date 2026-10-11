@@ -1,0 +1,5 @@
+# Baseline: native tool-calling loop, no plan, no verification.
+_target_: tpj.agent.ReActAgent
+llm: ${models.react}
+faults: ${faults}
+max_turns: 15

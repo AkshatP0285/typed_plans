@@ -1,0 +1,8 @@
+# Only faults that do not raise: what the gate has to catch on its own.
+_target_: tpj.faults.FaultInjector
+plan_rate: 0.3
+exec_rate: 0.2
+plan_types: [wrong_ref, wrong_tool, swap_args, wrong_literal]
+exec_types: [empty, wrong_type, schema_drift, wrong_value]
+first_attempt_only: true
+seed: ${seed}

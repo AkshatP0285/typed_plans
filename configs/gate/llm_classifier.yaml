@@ -1,0 +1,6 @@
+# Prompted LLM as the classifier (comparison point for Laya / JEV).
+_target_: tpj.gate.simple.LLMClassifierGate
+llm: ${models.gate_llm}
+threshold: 0.5
+check_plan: true
+check_post: true

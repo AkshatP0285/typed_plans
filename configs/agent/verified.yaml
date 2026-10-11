@@ -1,0 +1,14 @@
+# The proposed system (Figure 1).
+_target_: tpj.agent.VerifiedAgent
+planner: ${planner}
+gate: ${gate}
+ir_editor: ${ir_editor}
+judge: ${judge}
+repair: ${repair}
+scheduler: ${scheduler}
+cache: ${cache}
+faults: ${faults}
+max_plan_edits: 2
+max_repairs: 3
+max_waves: 50
+lenient_paths: true

@@ -1,0 +1,10 @@
+__pycache__/
+*.egg-info/
+.venv/
+.cache/
+outputs/
+multirun/
+checkpoints/
+third_party/
+data/raw/
+.env

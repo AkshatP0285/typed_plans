@@ -1,0 +1,8 @@
+# @package _global_
+# Proposed system vs ReAct under the same faults (add +experiment=baseline_direct separately).
+defaults:
+  - override /faults: light
+hydra:
+  sweeper:
+    params:
+      agent: verified,react
