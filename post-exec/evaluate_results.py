@@ -1,7 +1,7 @@
 """Compute per-experiment metrics from results/predictions.csv."""
 from pathlib import Path
 import pandas as pd
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix,f1_score
 
 ROOT = Path(__file__).resolve().parent
 RESULTS = ROOT / "results" / "predictions.csv"
@@ -33,6 +33,41 @@ def main():
         print("Mean state characters:", round(valid["state_chars"].mean(), 1))
         print("Observed model versions:", sorted(valid["model"].dropna().unique().tolist()))
     print("\nImportant: this is a tiny synthetic pilot, not a research-quality estimate.")
+
+    # # Save evaluation results
+    # from pathlib import Path
+    # import json
+
+    # results_dir = Path("results")
+    # results_dir.mkdir(exist_ok=True)
+
+    # # Save metrics in a JSON file
+    # with open(results_dir / "evaluation_summary.json", "w") as f:
+    #     json.dump(results, f, indent=4)
+
+    # print("Evaluation results saved to results/evaluation_summary.json")
+
+    # Save evaluation metrics
+    import json
+
+    with open("results/evaluation_summary.json", "w", encoding="utf-8") as f:
+        json.dump({
+            "experiment": mode,
+            "accuracy": float(accuracy_score(y_true, y_pred)),
+            "macro_f1": float(f1_score(
+                y_true, y_pred, labels=LABELS,
+                average="macro", zero_division=0
+            )),
+            "classification_report": classification_report(
+                y_true, y_pred, labels=LABELS,
+                output_dict=True, zero_division=0
+            ),
+            "confusion_matrix": confusion_matrix(
+                y_true, y_pred, labels=LABELS
+            ).tolist()
+        }, f, indent=4)
+
+    print("Saved evaluation to results/evaluation_summary.json")
 
 if __name__ == "__main__":
     main()
