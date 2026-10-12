@@ -1,0 +1,64 @@
+[
+  {
+    "id": "demo_ok",
+    "tool_call": {
+      "tool": "get_weather",
+      "arguments": {
+        "city": "Chennai"
+      }
+    },
+    "execution_status": "success",
+    "tool_output": {
+      "temperature": 29,
+      "condition": "Cloudy"
+    },
+    "expected_output_requirements": {
+      "type": "object",
+      "required": {
+        "temperature": "number",
+        "condition": "string"
+      }
+    },
+    "ground_truth": "OKAY"
+  },
+  {
+    "id": "demo_error",
+    "tool_call": {
+      "tool": "search_trains",
+      "arguments": {
+        "from": "BLR",
+        "to": "GOI"
+      }
+    },
+    "execution_status": "error",
+    "tool_output": {
+      "error": "Connection timeout"
+    },
+    "expected_output_requirements": {
+      "type": "object",
+      "required": {
+        "trains": "array"
+      }
+    },
+    "ground_truth": "ERROR"
+  },
+  {
+    "id": "demo_format",
+    "tool_call": {
+      "tool": "get_balance",
+      "arguments": {
+        "account_id": "A17"
+      }
+    },
+    "execution_status": "success",
+    "tool_output": "Balance is twelve hundred rupees",
+    "expected_output_requirements": {
+      "type": "object",
+      "required": {
+        "balance": "number",
+        "currency": "string"
+      }
+    },
+    "ground_truth": "NEEDS_FORMAT_CHANGE"
+  }
+]
