@@ -1,0 +1,100 @@
+# Experiment config. Add / remove / disable [[experiments]] blocks, then `python run.py run`.
+# Secrets never go here: JEV (OpenRouter) reads OPENROUTER_API_KEY from the environment.
+
+[defaults]
+task = "pre_exec_plan"
+data = "test_set/pre_exec_test_set.jsonl"   # frozen test set (see test_set/README.md)
+results_dir = "results"
+prompt = "default"
+
+# --------------------------------------------------------------------------- prompts
+# Label definitions + instruction text. Add a variant and point an experiment at it
+# with `prompt = "..."` to test wording without touching code.
+[prompts.default]
+instructions = """Classify this PRE-EXECUTION plan before any tool is run. Compare the plan (an ordered list of steps; '$sN.field' means an output of step sN) against the user request and the available tool schemas. Return VALID only if the plan is correct and complete for the request; otherwise return INVALID."""
+[prompts.default.labels]
+VALID = "The plan correctly and completely fulfils the user request: every step uses an appropriate available tool with arguments that match the tool schema and the request, dependencies are correct, and no needed step is missing or unneeded step is present."
+INVALID = "The plan has at least one defect: a needed step is missing, a step is unnecessary or redundant, a step uses the wrong tool, an argument value is wrong for the request or violates the tool schema, or a dependency is wrong."
+
+# Few-shot v1 wording: the state carries `labeled_examples` plus the `case_to_classify`.
+[prompts.fewshot]
+instructions = """Classify the plan in case_to_classify (a PRE-EXECUTION plan: ordered steps, '$sN.field' means an output of step sN) against its user_query and available_tools. labeled_examples are solved examples for reference only: each shows a user_query, a plan and the correct verdict (with a reason when INVALID). Do not classify the examples. Return VALID only if the plan in case_to_classify is correct and complete for its request; otherwise return INVALID."""
+[prompts.fewshot.labels]
+VALID = "The plan correctly and completely fulfils the user request: every step uses an appropriate available tool with arguments that match the tool schema and the request, dependencies are correct, and no needed step is missing or unneeded step is present."
+INVALID = "The plan has at least one defect: a needed step is missing, a step is unnecessary or redundant, a step uses the wrong tool, an argument value is wrong for the request or violates the tool schema, or a dependency is wrong."
+
+# Few-shot v2: examples cover correct, partially wrong and wrong plans (see build_fewshot_v2.py).
+[prompts.fewshot_v2]
+instructions = """Classify the plan in case_to_classify (a PRE-EXECUTION plan: ordered steps, '$sN.field' means an output of step sN) against its user_query and available_tools. labeled_examples are solved examples for reference only; do not classify them. Each example has an assessment: 'correct' (every step right, verdict VALID), 'partially_wrong' (some steps right but at least one step missing, wrong or misconfigured, verdict INVALID) or 'wrong' (the plan does not do what the request asks, verdict INVALID). Return VALID only if the plan in case_to_classify is correct and complete for its request; otherwise return INVALID."""
+[prompts.fewshot_v2.labels]
+VALID = "The plan correctly and completely fulfils the user request: every step uses an appropriate available tool with arguments that match the tool schema and the request, dependencies are correct, and no needed step is missing or unneeded step is present."
+INVALID = "The plan has at least one defect: a needed step is missing, a step is unnecessary or redundant, a step uses the wrong tool, an argument value is wrong for the request or violates the tool schema, or a dependency is wrong."
+
+# --------------------------------------------------------------------------- experiments
+# Baseline with no model: deterministic schema/reference validator.
+[[experiments]]
+name = "rules_baseline"
+backend = "rules"
+enabled = true
+
+# ----------------------------------------------------------------------- JEV via OpenRouter
+# Needs OPENROUTER_API_KEY. OpenRouter's Decisions API (https://openrouter.ai/api/alpha/decisions);
+# the state limit is ~32,000 bytes, so every case fits even with few-shot examples.
+[[experiments]]
+name = "jev_or_zeroshot"
+backend = "jev_openrouter"
+prompt = "default"
+enabled = true
+[experiments.state]
+max_chars = 30000
+[experiments.params]
+model = "typesafe/jev-1.13"
+workers = 4
+
+# Few-shot v1: 4 fixed demonstrations (2 VALID, 2 INVALID) from plans NOT in the test set.
+[[experiments]]
+name = "jev_or_fewshot4_v1"
+backend = "jev_openrouter"
+prompt = "fewshot"
+enabled = true
+[experiments.state]
+fewshot = "test_set/fewshot_examples.json"
+max_chars = 30000
+[experiments.params]
+model = "typesafe/jev-1.13"
+workers = 4
+
+# Few-shot v2: 6 demonstrations (2 correct, 2 partially wrong, 2 wrong) from plans NOT in the test set.
+[[experiments]]
+name = "jev_or_fewshot_v2"
+backend = "jev_openrouter"
+prompt = "fewshot_v2"
+enabled = true
+[experiments.state]
+fewshot = "test_set/fewshot_examples_v2.json"
+max_chars = 30000
+[experiments.params]
+model = "typesafe/jev-1.13"
+workers = 4
+
+# ------------------------------------------------------------------------------------ Laya
+# Local CPU models; run with the venv: .venv-laya\Scripts\python run.py ...
+# Laya English with a token budget big enough for our plans (the 512 default truncates most of them).
+[[experiments]]
+name = "laya_english_2048"
+backend = "laya"
+enabled = true
+[experiments.params]
+ckpt = "english"
+max_len = 2048
+head_max_len = 192
+
+# Laya typed-decisions checkpoint. PARTIAL: only 108 of 466 cases scored; disabled so a default
+# `report` stays on the full 466 (a paired comparison shrinks to the smallest set). Use --only to include it.
+[[experiments]]
+name = "laya_typed_2048"
+backend = "laya"
+enabled = false
+[experiments.params]
+ckpt = "typed-decisions"
+max_len = 2048

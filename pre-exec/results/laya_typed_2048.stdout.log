@@ -1,0 +1,115 @@
+[laya_typed_2048] backend=laya prompt=default params={'ckpt': 'typed-decisions', 'max_len': 2048}
+  0 already scored, 108 to run -> C:\Users\Akshat Pandey\Desktop\tutorials\typed\typed_plans\pre-exec\results\laya_typed_2048.jsonl
+Fetching 5 files:   0%|          | 0/5 [00:00<?, ?it/s]Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Fetching 5 files:  20%|##        | 1/5 [00:00<00:01,  2.93it/s]Fetching 5 files:  40%|####      | 2/5 [00:00<00:00,  4.89it/s]Fetching 5 files:  60%|######    | 3/5 [00:00<00:00,  4.07it/s]Fetching 5 files: 100%|##########| 5/5 [04:11<00:00, 71.11s/it]Fetching 5 files: 100%|##########| 5/5 [04:11<00:00, 50.32s/it]
+C:\Users\Akshat Pandey\Desktop\tutorials\typed\typed_plans\pre-exec\.venv-laya\Lib\site-packages\laya\agent.py:2143: RuntimeWarning: laya: this checkpoint ships invalid temperatures or values outside [0.5, 5]; using choice:11+=0.10058280825614929 -> 0.5. Treat confidence from the affected entries as uncalibrated.
+  return Agent(model_id_or_path, device=device, token=token, subfolder=subfolder, fast=fast,
+  laya typed-decisions: max_len=2048 head_max_len=256
+  [1/108] toolace_8774__gt: true=VALID pred=VALID
+  [2/108] toolace_8774__remove: true=INVALID pred=VALID
+  [3/108] toolace_8774__replace_arg: true=INVALID pred=VALID
+  [4/108] toolace_8774__add_duplicate: true=INVALID pred=VALID
+  [5/108] apigen_mt_855__gt: true=VALID pred=VALID
+  [6/108] apigen_mt_855__remove: true=INVALID pred=VALID
+  [7/108] apigen_mt_855__replace_tool: true=INVALID pred=VALID
+  [8/108] apigen_mt_855__replace_arg: true=INVALID pred=VALID
+  [9/108] apigen_mt_855__add_unrelated_tool: true=INVALID pred=VALID
+  [10/108] apigen_mt_871__gt: true=VALID pred=VALID
+  [11/108] apigen_mt_871__remove: true=INVALID pred=VALID
+  [12/108] apigen_mt_871__replace_tool: true=INVALID pred=VALID
+  [13/108] apigen_mt_871__add_unrelated_tool: true=INVALID pred=VALID
+  [14/108] toolace_6588__gt: true=VALID pred=VALID
+  [15/108] toolace_6588__remove: true=INVALID pred=VALID
+  [16/108] toolace_6588__replace_tool: true=INVALID pred=VALID
+  [17/108] toolace_6588__replace_arg: true=INVALID pred=VALID
+  [18/108] toolace_6588__add_duplicate: true=INVALID pred=VALID
+  [19/108] hermes_1347__remove: true=INVALID pred=VALID
+  [20/108] hermes_1347__replace_tool: true=INVALID pred=VALID
+  [21/108] hermes_1347__replace_arg: true=INVALID pred=VALID
+  [22/108] hermes_1347__add_duplicate: true=INVALID pred=VALID
+  [23/108] toolace_5127__gt: true=VALID pred=VALID
+  [24/108] toolace_5127__remove: true=INVALID pred=VALID
+  [25/108] toolace_5127__replace_arg: true=INVALID pred=VALID
+  [26/108] toolace_5127__add_duplicate: true=INVALID pred=VALID
+  [27/108] apigen_mt_3290__gt: true=VALID pred=VALID
+  [28/108] apigen_mt_3290__remove: true=INVALID pred=VALID
+  [29/108] apigen_mt_3290__replace_tool: true=INVALID pred=VALID
+  [30/108] apigen_mt_3290__replace_arg: true=INVALID pred=VALID
+  [31/108] apigen_mt_3290__add_unrelated_tool: true=INVALID pred=VALID
+  [32/108] toolace_5768__gt: true=VALID pred=VALID
+  [33/108] toolace_5768__remove: true=INVALID pred=VALID
+  [34/108] toolace_5768__replace_tool: true=INVALID pred=VALID
+  [35/108] toolace_5768__replace_arg: true=INVALID pred=VALID
+  [36/108] toolace_5768__add_unrelated_tool: true=INVALID pred=VALID
+  [37/108] toolace_1819__gt: true=VALID pred=VALID
+  [38/108] toolace_1819__remove: true=INVALID pred=VALID
+  [39/108] toolace_1819__replace_tool: true=INVALID pred=VALID
+  [40/108] toolace_1819__add_unrelated_tool: true=INVALID pred=VALID
+  [41/108] apigen_mt_268__gt: true=VALID pred=VALID
+  [42/108] apigen_mt_268__remove: true=INVALID pred=VALID
+  [43/108] apigen_mt_268__replace_tool: true=INVALID pred=VALID
+  [44/108] apigen_mt_268__replace_arg: true=INVALID pred=VALID
+  [45/108] apigen_mt_268__add_unrelated_tool: true=INVALID pred=VALID
+  [46/108] hermes_1628__gt: true=VALID pred=VALID
+  [47/108] hermes_1628__remove: true=INVALID pred=VALID
+  [48/108] hermes_1628__replace_tool: true=INVALID pred=VALID
+  [49/108] hermes_1628__replace_arg: true=INVALID pred=VALID
+  [50/108] hermes_1628__add_duplicate: true=INVALID pred=VALID
+  [51/108] hermes_282__gt: true=VALID pred=VALID
+  [52/108] hermes_282__remove: true=INVALID pred=VALID
+  [53/108] hermes_282__replace_arg: true=INVALID pred=VALID
+  [54/108] hermes_282__add_duplicate: true=INVALID pred=VALID
+  [55/108] toolace_7378__gt: true=VALID pred=VALID
+  [56/108] toolace_7378__replace_arg: true=INVALID pred=VALID
+  [57/108] toolace_7378__add_duplicate: true=INVALID pred=VALID
+  [58/108] apigen_mt_1058__gt: true=VALID pred=VALID
+  [59/108] apigen_mt_1058__remove: true=INVALID pred=VALID
+  [60/108] apigen_mt_1058__replace_arg: true=INVALID pred=VALID
+  [61/108] apigen_mt_1058__add_unrelated_tool: true=INVALID pred=VALID
+  [62/108] toolace_7865__gt: true=VALID pred=VALID
+  [63/108] toolace_7865__remove: true=INVALID pred=VALID
+  [64/108] toolace_7865__replace_tool: true=INVALID pred=VALID
+  [65/108] toolace_7865__replace_arg: true=INVALID pred=VALID
+  [66/108] toolace_7865__add_unrelated_tool: true=INVALID pred=VALID
+  [67/108] hermes_2001__gt: true=VALID pred=VALID
+  [68/108] hermes_2001__remove: true=INVALID pred=VALID
+  [69/108] hermes_2001__replace_arg: true=INVALID pred=VALID
+  [70/108] hermes_2001__add_duplicate: true=INVALID pred=VALID
+  [71/108] apigen_mt_1536__gt: true=VALID pred=VALID
+  [72/108] apigen_mt_1536__remove: true=INVALID pred=VALID
+  [73/108] apigen_mt_1536__replace_tool: true=INVALID pred=VALID
+  [74/108] apigen_mt_1536__add_unrelated_tool: true=INVALID pred=VALID
+  [75/108] toolace_9874__gt: true=VALID pred=VALID
+  [76/108] toolace_9874__remove: true=INVALID pred=VALID
+  [77/108] toolace_9874__replace_tool: true=INVALID pred=VALID
+  [78/108] toolace_9874__replace_arg: true=INVALID pred=VALID
+  [79/108] toolace_9874__add_unrelated_tool: true=INVALID pred=VALID
+  [80/108] apigen_mt_249__remove: true=INVALID pred=VALID
+  [81/108] apigen_mt_249__replace_tool: true=INVALID pred=VALID
+  [82/108] apigen_mt_249__replace_arg: true=INVALID pred=VALID
+  [83/108] apigen_mt_249__add_unrelated_tool: true=INVALID pred=VALID
+  [84/108] toolace_8208__gt: true=VALID pred=VALID
+  [85/108] toolace_8208__replace_tool: true=INVALID pred=VALID
+  [86/108] toolace_8208__replace_arg: true=INVALID pred=VALID
+  [87/108] toolace_8208__add_unrelated_tool: true=INVALID pred=VALID
+  [88/108] hermes_1602__gt: true=VALID pred=VALID
+  [89/108] hermes_1602__remove: true=INVALID pred=VALID
+  [90/108] hermes_1602__replace_tool: true=INVALID pred=VALID
+  [91/108] hermes_1602__replace_arg: true=INVALID pred=VALID
+  [92/108] hermes_1602__add_duplicate: true=INVALID pred=VALID
+  [93/108] toolace_8919__gt: true=VALID pred=VALID
+  [94/108] toolace_8919__replace_tool: true=INVALID pred=VALID
+  [95/108] toolace_8919__replace_arg: true=INVALID pred=VALID
+  [96/108] toolace_8919__add_unrelated_tool: true=INVALID pred=VALID
+  [97/108] apigen_mt_582__gt: true=VALID pred=VALID
+  [98/108] apigen_mt_582__remove: true=INVALID pred=VALID
+  [99/108] apigen_mt_582__add_unrelated_tool: true=INVALID pred=VALID
+  [100/108] toolace_10340__gt: true=VALID pred=INVALID
+  [101/108] toolace_10340__remove: true=INVALID pred=VALID
+  [102/108] toolace_10340__replace_tool: true=INVALID pred=VALID
+  [103/108] toolace_10340__replace_arg: true=INVALID pred=INVALID
+  [104/108] toolace_10340__add_unrelated_tool: true=INVALID pred=INVALID
+  [105/108] toolace_7447__gt: true=VALID pred=VALID
+  [106/108] toolace_7447__remove: true=INVALID pred=VALID
+  [107/108] toolace_7447__replace_arg: true=INVALID pred=VALID
+  [108/108] toolace_7447__add_unrelated_tool: true=INVALID pred=VALID

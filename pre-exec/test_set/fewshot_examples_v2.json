@@ -1,0 +1,171 @@
+[
+ {
+  "_base_id": "toolace_2588",
+  "_kind": "partial_replace_arg",
+  "assessment": "partially_wrong",
+  "user_query": "Can you provide me with the current rates for the EUR/USD, GBP/USD, and USD/JPY Forex pairs?",
+  "plan": {
+   "steps": [
+    {
+     "id": "s1",
+     "tool": "market/get-summary",
+     "args": {
+      "symbol": "EUR/USD"
+     },
+     "depends_on": [],
+     "danger": false
+    },
+    {
+     "id": "s2",
+     "tool": "market/get-summary",
+     "args": {
+      "symbol": "GBP/USD"
+     },
+     "depends_on": [],
+     "danger": false
+    },
+    {
+     "id": "s3",
+     "tool": "market/get-summary",
+     "args": {
+      "symbol": "GC"
+     },
+     "depends_on": [],
+     "danger": false
+    }
+   ]
+  },
+  "verdict": "INVALID",
+  "reason": "partially wrong: s1 (market/get-summary), s2 (market/get-summary) are right, but s3 (market/get-summary) uses symbol='GC' while the request says 'USD/JPY'"
+ },
+ {
+  "_base_id": "toolace_9935",
+  "_kind": "partial_remove",
+  "assessment": "partially_wrong",
+  "user_query": "Can you get the list of lotteries for the following strings: \"Mega Millions\", \"Powerball\", and \"EuroMillions\"?",
+  "plan": {
+   "steps": [
+    {
+     "id": "s1",
+     "tool": "Get Lottery List By Date",
+     "args": {
+      "string": "Mega Millions"
+     },
+     "depends_on": [],
+     "danger": false
+    },
+    {
+     "id": "s2",
+     "tool": "Get Lottery List By Date",
+     "args": {
+      "string": "EuroMillions"
+     },
+     "depends_on": [],
+     "danger": false
+    }
+   ]
+  },
+  "verdict": "INVALID",
+  "reason": "partially wrong: the remaining steps are right, but a needed step is missing: the request asks for Get Lottery List By Date with {\"string\": \"Powerball\"} and the plan never does it"
+ },
+ {
+  "_base_id": "toolace_6642",
+  "_kind": "wrong_all_tools",
+  "assessment": "wrong",
+  "user_query": "I need a list of artistic directors in France, and can you also provide a general list of artistic directors from various haute couture maisons?",
+  "plan": {
+   "steps": [
+    {
+     "id": "s1",
+     "tool": "ObjectExists",
+     "args": {
+      "country": "France"
+     },
+     "depends_on": [],
+     "danger": false
+    },
+    {
+     "id": "s2",
+     "tool": "Safe For Work (SFW) Image API",
+     "args": {},
+     "depends_on": [],
+     "danger": false
+    }
+   ]
+  },
+  "verdict": "INVALID",
+  "reason": "wrong: every step calls the wrong tool for the arguments it is given, so no part of the plan does what the request asks"
+ },
+ {
+  "_base_id": "hermes_831",
+  "_kind": "correct",
+  "assessment": "correct",
+  "user_query": "I have some chicken, tomatoes, and basil. Can you find me a recipe?",
+  "plan": {
+   "steps": [
+    {
+     "id": "s1",
+     "tool": "get_recipe",
+     "args": {
+      "ingredients": [
+       "chicken",
+       "tomatoes",
+       "basil"
+      ]
+     },
+     "depends_on": [],
+     "danger": false
+    }
+   ]
+  },
+  "verdict": "VALID",
+  "reason": "all steps are right: tools and argument values match the request and nothing is missing or extra"
+ },
+ {
+  "_base_id": "toolace_10150",
+  "_kind": "correct",
+  "assessment": "correct",
+  "user_query": "Can you provide a list of available label shapes for Avery brand in A4 format?",
+  "plan": {
+   "steps": [
+    {
+     "id": "s1",
+     "tool": "Get Available Label Shapes",
+     "args": {
+      "brand": "Avery",
+      "format": "A4"
+     },
+     "depends_on": [],
+     "danger": false,
+     "condition": null
+    }
+   ]
+  },
+  "verdict": "VALID",
+  "reason": "all steps are right: tools and argument values match the request and nothing is missing or extra"
+ },
+ {
+  "_base_id": "hermes_222",
+  "_kind": "wrong_unrelated",
+  "assessment": "wrong",
+  "user_query": "Can you tell me about the movie Inception?",
+  "plan": {
+   "steps": [
+    {
+     "id": "s1",
+     "tool": "Tennis Calendar Daily Categories",
+     "args": {
+      "day": 11,
+      "month": 5,
+      "year": 2025
+     },
+     "depends_on": [],
+     "danger": false,
+     "condition": null
+    }
+   ]
+  },
+  "verdict": "INVALID",
+  "reason": "wrong: the plan answers a different request; it calls Tennis Calendar Daily Categories, none of which the request asks for"
+ }
+]
