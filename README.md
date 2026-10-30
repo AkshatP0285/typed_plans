@@ -16,53 +16,30 @@ query ─▶ planner ─▶ IR ─▶ gate(plan) ──flag──▶ LLM IR edit
 
 New to the code? Start with [docs/CODE_WALKTHROUGH.md](docs/CODE_WALKTHROUGH.md). It gives a reading order, explains how Hydra builds the objects and how tracing works, and follows one task through the code.
 
-## Layout
-
-```
-configs/                  Hydra config groups (one per pipeline box, see below)
-src/tpj/
-  ir/                     IR schema, $ref resolution, waves / dirty regions, plan formats (RQ1)
-  llm/client.py           one OpenAI-compatible client for vLLM and hosted APIs, disk-cached
-  planner/                prompted / fine-tuned planner, gold (oracle) planner
-  gate/                   Laya (local HF), JEV (HTTP), LLM classifier, constant, oracle
-  judge/                  LLM IR editor (pre-execution) and LLM judge (post-execution)
-  repair/                 patch ops (edit/remove/replace/add) + local / full-replan / none
-  executor/               execution state, wave vs sequential scheduling
-  cache/                  verified-output cache keyed by tool + resolved args
-  faults/                 plan- and execution-level fault injection (ground-truth labels)
-  agent/                  run.py = Figure-1 state machine; VerifiedAgent; ReAct baseline
-  benchmarks/             toy, NESTFUL, TaskBench, BFCL, tau2 adapters
-  eval/                   trace events, metrics, report table
-  finetune/sft.py         QLoRA SFT of the IR planner
-scripts/                  run_agent.py, run_tau2.py, finetune.py, report.py
-tests/                    IR, formats, patches, end-to-end loop (no models needed)
-```
-
 ## Setup
 
-Python ≥ 3.10, GPU machine.
+Python >= 3.10 (3.12 for tau2), GPU machine.
 
 ```bash
-pip install -e ".[gpu,dev]"            # core + Laya/QLoRA deps
-pip install vllm                         # model serving
-pip install git+https://github.com/sierra-research/tau2-bench   # only for tau2
-pytest                                   # runs without any model
+pip install -e ".[gpu,dev]"
+pip install vllm                                                   # model serving
+pip install git+https://github.com/sierra-research/tau2-bench     # only for tau2
+pytest                                                             # runs without any model
 ```
 
-Serve the open models (OpenAI-compatible):
+Serve the planner (4B) and the editor / judge (27B), both OpenAI-compatible:
 
 ```bash
-vllm serve Qwen/Qwen3-8B  --port 8000 --enable-lora --lora-modules ir_planner=checkpoints/ir_planner_qwen3_8b
-vllm serve Qwen/Qwen3-32B --port 8001
-export VLLM_SMALL_URL=http://localhost:8000/v1 VLLM_LARGE_URL=http://localhost:8001/v1
+vllm serve Qwen/Qwen3-4B --port 8002
+vllm serve <Qwen 27B model> --port 8004 --tensor-parallel-size 2 --max-model-len 16384 --reasoning-parser qwen3
+export VLLM_4B_URL=http://localhost:8002/v1 VLLM_27B_URL=http://localhost:8004/v1
+export OPENROUTER_API_KEY=...        # JEV; set in the shell only, never commit it
 ```
-
-API keys, only for the components you use: `OPENAI_API_KEY`, `TYPESAFE_API_KEY` (JEV), `DASHSCOPE_API_KEY` (Qwen Max).
 
 Benchmark data:
-- NESTFUL and TaskBench load from Hugging Face automatically. For executable NESTFUL tools, clone `IBM/NESTFUL` and set `NESTFUL_FUNCTIONS_DIR=<clone>/data_v2/executable_functions`. Without it, mocks plus sequence metrics are used.
+- TaskBench loads from Hugging Face automatically. NESTFUL needs `NESTFUL_FUNCTIONS_DIR=<IBM/NESTFUL clone>/data_v2/executable_functions` for executable tools.
 - BFCL: clone `ShishirPatil/gorilla` and set `BFCL_DATA_DIR=<clone>/berkeley-function-call-leaderboard/bfcl_eval/data`.
-- tau2: installed as a package (see above).
+- tau2: set `TAU2_DATA_DIR=<tau2-bench clone>/data`.
 
 ## Running
 
@@ -70,97 +47,42 @@ Benchmark data:
 # smoke test: oracle plan, no models
 python scripts/run_agent.py benchmark=toy planner=gold gate=always_pass
 
-# full system on NESTFUL with light fault injection
-python scripts/run_agent.py benchmark=nestful gate=laya faults=light
+# common overrides used in the experiments
+M="model@models.planner=qwen3_4b_vllm model@models.editor=qwen3_27b_vllm model@models.judge=qwen3_27b_vllm model@models.converter=qwen3_4b_vllm"
 
-# swap anything from the CLI
-python scripts/run_agent.py benchmark=taskbench gate=jev model@models.judge=gpt4o_mini limit=50
+# BFCL Non-Live, typed IR (swap plan_format=graph | free_text_rule)
+python scripts/run_agent.py benchmark=bfcl "benchmark.categories=[simple_python,multiple,parallel,parallel_multiple,irrelevance]" \
+  benchmark.limit=1235 planner=prompted planner.few_shot=false plan_format=typed_ir gate=jev ir_editor=llm judge=llm $M
 
-# baselines
-python scripts/run_agent.py +experiment=baseline_direct benchmark=nestful   # no verification
-python scripts/run_agent.py agent=react benchmark=nestful                   # ReAct
+# JEV sees the IR as text; post-checks only on danger steps
+python scripts/run_agent.py benchmark=bfcl ... gate=jev gate.plan_view=ir_text gate.post_steps=danger
 
-# experiment sweeps (Hydra multirun)
+# TaskBench with retrieved examples (subset: dailylifeapis | huggingface | multimedia)
+python scripts/run_agent.py benchmark=taskbench benchmark.subset=huggingface benchmark.limit=500 \
+  planner=retrieval plan_format=typed_ir_dep5r gate=jev ir_editor=llm judge=llm $M
+
+# ablations
+python IR_Ablations/error_find.py              # planted-error detection per format
+python IR_Ablations/jev_format_input.py        # JEV input view on stored plans
+python IR_Ablations/dep_analysis.py            # dependency recall / precision / waves
+python IR_Ablations/static_check.py
+
+# sweeps and report
 python scripts/run_agent.py -m +experiment=rq1_format benchmark=taskbench
-python scripts/run_agent.py -m +experiment=rq2_gating benchmark=nestful
-python scripts/run_agent.py -m +experiment=ablations  benchmark=nestful
-python scripts/run_agent.py -m +experiment=threshold_sweep gate=laya
 python scripts/report.py multirun/<date>/<time>
-
-# tau2-bench
-python scripts/run_tau2.py benchmark=tau2 benchmark.domain=airline benchmark.num_tasks=20
-
-# fine-tune the planner once the synthetic IR dataset exists
-python scripts/finetune.py finetune.train_file=data/ir/train.jsonl finetune.eval_file=data/ir/dev.jsonl
-python scripts/run_agent.py planner=finetuned benchmark=nestful
 ```
 
 Each run writes `results.jsonl` (per-task plan, calls, score), `trace.jsonl` (every event) and `metrics.json` to its Hydra output directory. Responses from the LLMs and JEV are cached on disk (`.cache/`), so re-running an unchanged config makes no new calls.
-
-## Config groups
-
-| Group | Options | Pipeline box |
-|---|---|---|
-| `model@models.<role>` | `qwen3_8b_vllm`, `qwen3_32b_vllm`, `planner_lora`, `qwen_max_api`, `gpt4o_mini`, `gpt56_luna`, `gpt6_luna_pro` | model for each role: `planner`, `planner_ft`, `editor`, `judge`, `gate_llm`, `converter`, `react`, `responder` |
-| `plan_format` | `typed_ir`, `graph`, `free_text` | plan representation (RQ1) |
-| `planner` | `prompted`, `finetuned`, `gold` | LLM planner |
-| `gate` | `laya`, `jev`, `llm_classifier`, `always_pass`, `always_flag`, `oracle` | pre-/post-execution classifier |
-| `ir_editor` | `llm`, `none` | LLM IR editing |
-| `judge` | `llm`, `none` | LLM-as-a-judge |
-| `repair` | `local`, `full_replan`, `none` | IR repair |
-| `scheduler` | `waves`, `sequential` | wave-wise execution |
-| `cache` | `node`, `none` | cache of successful outputs |
-| `faults` | `none`, `light`, `heavy`, `silent` | controlled failures |
-| `benchmark` | `toy`, `nestful`, `taskbench`, `bfcl`, `tau2` | evaluation |
-| `agent` | `verified`, `react` | system vs baseline |
-| `+experiment` | `baseline_direct`, `baselines`, `rq1_format`, `rq2_gating`, `ablations`, `threshold_sweep` | presets / sweeps |
-
-The gate flags a plan or an outcome when `1 - P(OKAY) >= gate.threshold`. `gate.check_plan` and `gate.check_post` turn the two checkpoints on and off independently.
 
 ## The IR
 
 ```json
 {"steps": [
-  {"id": "s1", "tool": "search_flights", "args": {"origin": "BLR", "dest": "GOI"}, "returns": "list[Flight]", "safety": "safe"},
-  {"id": "s5", "tool": "pick_cheapest", "args": {"options": [{"$ref": "s1"}, {"$ref": "s2"}]}, "returns": "Option", "safety": "safe"},
-  {"id": "s7", "tool": "book_transport", "args": {"option_id": {"$ref": "s5", "path": "id"}}, "returns": "Booking", "safety": "danger"},
-  {"id": "s9", "tool": "book_indoor_activity", "args": {"people": 4}, "returns": "Booking", "safety": "danger",
+  {"id": "s1", "tool": "search_flights", "args": {"origin": "BLR", "dest": "GOI"}, "after": [], "returns": "list[Flight]", "safety": "safe"},
+  {"id": "s5", "tool": "pick_cheapest", "args": {"options": [{"$ref": "s1"}, {"$ref": "s2"}]}, "after": ["s1", "s2"], "returns": "Option", "safety": "safe"},
+  {"id": "s7", "tool": "book_transport", "args": {"option_id": {"$ref": "s5", "path": "id"}}, "after": ["s5"], "returns": "Booking", "safety": "danger"},
+  {"id": "s9", "tool": "book_indoor_activity", "args": {"people": 4}, "after": ["s6"], "returns": "Booking", "safety": "danger",
    "when": {"ref": "s6", "equals": true}}
  ],
  "final": ["s11"]}
 ```
-
-Dependencies exist only through `$ref` (and `when`), and waves are derived from them. The full Figure 2 example is in [src/tpj/ir/examples.py](src/tpj/ir/examples.py). A reference to a step that was skipped by its condition resolves to `null`.
-
-The synthetic IR dataset for fine-tuning should be JSONL lines of `{"query": ..., "tools": [ToolSpec], "plan": {"steps": [...], "final": [...]}}`. `finetune/sft.py` builds prompts with the same `PromptedPlanner.build_messages` used at inference.
-
-## Metrics (from `trace.jsonl`)
-
-- **Success Rate**: benchmark-specific `success` (NESTFUL answer/sequence match, TaskBench node+edge match, BFCL AST match, tau2 reward from tau2's own output)
-- **Avg tokens / API calls**: split by role (planner, gate, ir_editor, judge, converter, react, responder)
-- **Gate P/R/F1/accuracy**: against injected faults, separately for plan level and node level. Raised exceptions are not counted because they never reach the gate.
-- **Unsafe Action Detection Rate**: injected plan faults flagged before execution ÷ injected plan faults
-- **False Intervention Rate**: valid plans and nodes that were flagged ÷ all valid plans and nodes the gate saw
-- **Cache reuse, re-executions, interventions, repair success rate**
-
-## Planned extensions (not implemented yet)
-
-These are deliberately left out of the code for now:
-
-1. **Rule-based IR validator (free, deterministic pre-check).** Runs before the gate and catches structural problems at zero model cost:
-   - every `$ref` points to an existing earlier step, and the graph is acyclic
-   - the tool exists and the args match its JSON schema (required params, types)
-   - a referenced step's `returns` type is compatible with the parameter type
-   - a step whose tool is side-effecting must not be tagged `safe`
-   - `when` references a `bool` step, and no step is dead (unused and not final)
-
-   Issues would go to the IR editor together with the gate verdict. Splitting "structural (free)" from "semantic (gate)" would also give one more ablation. Today only the minimum needed to execute is checked (unknown refs, cycles, duplicate ids, in `ir/dag.py::check_structure`).
-2. **DANGER pre-step check.** Run the gate on every `safety: danger` step right before it executes, with resolved arguments, and block or route it to the judge before the side effect happens. This would make an action-level Unsafe Action Detection Rate measurable. The current rate is measured at plan level. The `safety` tag is already part of the IR and the traces (`node_result.safety`), so this needs a hook in `PlanRun.next_wave` plus a `faults` type that injects unsafe danger calls.
-
-## Notes / things to verify
-
-- **Laya**: the HF card `convaiinnovations/layab` is gated. `gate/laya.yaml` supports a causal-LM option scorer (`choice_lm`) and a classification head (`seq_cls`), so pick the one that matches the card.
-- **JEV**: uses `POST https://api.typesafe.ai/v1/systemone` with one `choice` question. The response parsing accepts both `answers.<id>.probabilities` and inline option probabilities.
-- **tau2**: the adapter follows tau2's agent README (`HalfDuplexAgent`, `generate_next_message`, `registry.register_agent_factory`). Re-check message class names against the installed version. tau2 tools are real, so fault injection is off there.
-- **BFCL**: single-turn categories only. Multi-turn needs BFCL's stateful executable backends.
-- **Model ids** for `gpt56_luna`, `gpt6_luna_pro` and `qwen_max_api` come from the proposal. Confirm the exact API ids.

@@ -12,3 +12,4 @@ lora/
 temp/
 outputs_archive_pre_limit_fix/
 docs/
+.bfcl_data_persist/
