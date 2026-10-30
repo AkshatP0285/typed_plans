@@ -26,7 +26,7 @@ def _tau2_cli_args(bench: DictConfig) -> list[str]:
             "--num-trials", str(bench.num_trials)]
     if bench.num_tasks:  # null / 0: leave --num-tasks out and use tau2's default
         args += ["--num-tasks", str(bench.num_tasks)]
-    args += list(bench.extra_args)
+    args += [str(a) for a in bench.extra_args]
     return args
 
 

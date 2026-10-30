@@ -37,7 +37,10 @@ class Step(BaseModel):
     when: Condition | None = Field(default=None, description="Optional execution condition")
     after: list[str] = Field(
         default_factory=list,
-        description="Ordering-only dependencies (no data flow). Rarely needed in typed IR.",
+        description=(
+            "Every other step this one depends on, including ones already referenced via "
+            "$ref in args - list them here too. Required whenever a dependency exists."
+        ),
     )
 
     def deps(self) -> set[str]:
@@ -66,8 +69,9 @@ class Plan(PlanDraft):
     def ids(self) -> list[str]:
         return [s.id for s in self.steps]
 
-    def to_prompt_json(self) -> str:
-        return json.dumps(self.model_dump(exclude={"query"}, exclude_none=True), indent=1)
+    def to_prompt_json(self, compact: bool = False) -> str:
+        """compact=True also drops fields left at their default (returns "Any", safety "safe", after [])."""
+        return json.dumps(self.model_dump(exclude={"query"}, exclude_none=True, exclude_defaults=compact), indent=1)
 
     @classmethod
     def from_draft(cls, draft: PlanDraft, query: str) -> "Plan":

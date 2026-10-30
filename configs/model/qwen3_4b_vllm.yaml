@@ -1,0 +1,14 @@
+# Small open model on vLLM (planner, gate LLM, converter, ReAct, responder), base weights only:
+#   vllm serve Qwen/Qwen3-4B --port 8002
+_target_: tpj.llm.client.LLMClient
+name: qwen3-4b
+model: Qwen/Qwen3-4B
+base_url: ${oc.env:VLLM_4B_URL,http://localhost:8002/v1}
+api_key_env: null
+temperature: 0.0
+max_tokens: 4096
+structured_output: response_format
+extra_body:
+  chat_template_kwargs: {enable_thinking: false}
+cache_dir: ${llm_cache_dir}
+max_concurrency: 64

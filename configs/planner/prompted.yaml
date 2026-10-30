@@ -2,5 +2,6 @@ _target_: tpj.planner.PromptedPlanner
 llm: ${models.planner}
 format: ${plan_format}
 few_shot: true
+n_fewshot: 1
 constrained: true        # JSON-schema constrained decoding (n/a for free_text)
 max_parse_retries: 1

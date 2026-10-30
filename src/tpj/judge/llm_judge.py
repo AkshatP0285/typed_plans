@@ -56,7 +56,7 @@ Request: {query}
 Current plan:
 {plan}
 
-Reply with the full corrected plan as JSON."""
+Reply with the full corrected plan as {reply}."""
 
 
 class LLMIREditor:
@@ -64,14 +64,24 @@ class LLMIREditor:
 
     enabled = True
 
-    def __init__(self, llm: LLMClient):
+    def __init__(self, llm: LLMClient, format=None, preserve_steps: bool = False):
         self.llm = llm
-        self._fmt = TypedIRFormat()
+        # Edit in the planner's own format (rules, schema, parser) so edits follow the plan's conventions.
+        self._fmt = format if format is not None else TypedIRFormat()
+        self._rules = self._fmt.instructions()
+        # Opt-in (off for BFCL, where deleting spurious calls is the right fix for irrelevance):
+        # for benchmarks where every request needs a tool, never let an edit wipe out the plan.
+        self.preserve_steps = preserve_steps
 
     async def revise(self, task: Task, plan: Plan, verdict: str, extra: str = "") -> Plan:
+        if self.preserve_steps:
+            extra = (extra + "\nSome tools list no parameters; positional arguments such as \"arg0\" are "
+                     "valid for them - keep them. Fix only the specific problem; do not delete steps that "
+                     "perform an action the request asks for.").strip()
         prompt = EDITOR_PROMPT.format(
-            verdict=verdict, extra=extra, rules=IR_RULES, tools=_tools_json(task),
-            query=task.query, plan=plan.to_prompt_json(),
+            verdict=verdict, extra=extra, rules=self._rules,
+            reply="JSON" if self._fmt.json_schema() else "plain text in the format above", tools=_tools_json(task),
+            query=task.query, plan=self._fmt.render(plan),
         )
         res = await self.llm.chat([{"role": "user", "content": prompt}], role="ir_editor",
                                   json_schema=self._fmt.json_schema(), schema_name="plan")
@@ -79,6 +89,9 @@ class LLMIREditor:
             new = await self._fmt.parse(res.text, task.query)
         except PlanParseError as e:
             emit("ir_edit_failed", error=str(e))
+            return plan
+        if self.preserve_steps and plan.steps and not new.steps:
+            emit("ir_edit_rejected", reason="edit removed every step")
             return plan
         emit("plan", source="ir_editor", plan=new.model_dump())
         return new
@@ -124,9 +137,11 @@ class LLMJudge:
 
     enabled = True
 
-    def __init__(self, llm: LLMClient, max_output_chars: int = 1500):
+    def __init__(self, llm: LLMClient, max_output_chars: int = 1500, format=None):
         self.llm = llm
         self.max_output_chars = max_output_chars
+        # The judge sees the plan as IR JSON, so non-IR formats get the IR rules.
+        self._rules = format.instructions() if isinstance(format, TypedIRFormat) else IR_RULES
 
     async def review(self, task: Task, plan: Plan, flags: list[Flag], status: dict[str, Any]) -> JudgeDecision:
         status_lines = []
@@ -142,7 +157,7 @@ class LLMJudge:
         flags_txt = "\n".join(flag_lines)
 
         prompt = JUDGE_PROMPT.format(
-            rules=IR_RULES, tools=_tools_json(task), query=task.query,
+            rules=self._rules, tools=_tools_json(task), query=task.query,
             plan=plan.to_prompt_json(), status=status_txt or "(nothing yet)", flags=flags_txt,
         )
         res = await self.llm.chat([{"role": "user", "content": prompt}], role="judge",

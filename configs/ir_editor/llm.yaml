@@ -1,2 +1,4 @@
 _target_: tpj.judge.LLMIREditor
 llm: ${models.editor}
+format: ${plan_format}   # same rules as the planner
+preserve_steps: false  # true for TaskBench (every request needs a tool)

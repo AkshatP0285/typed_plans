@@ -1,9 +1,16 @@
-# TypeSafe AI JEV over HTTP (needs TYPESAFE_API_KEY).
+# JEV via OpenRouter's Decisions API (needs OPENROUTER_API_KEY - never put the
+# key in this file, export it in the shell). Model slug matches the
+# fewshot4_v1 pilot that scored F1 .961 on the 466-case pre-exec test set.
 _target_: tpj.gate.jev.JEVGate
-model: jev-latest
-base_url: https://api.typesafe.ai/v1
-api_key_env: TYPESAFE_API_KEY
+model: typesafe/jev-1.13
+url: https://openrouter.ai/api/alpha/decisions
+api_key_env: OPENROUTER_API_KEY
 cache_dir: .cache/jev
+max_chars: 30000  # OpenRouter's state limit is ~32,000 bytes, vs 8,000 for the direct API
+plan_fewshot_file: data/jev_fewshot/plan_verification_fewshot.json
 threshold: 0.5
 check_plan: true
 check_post: true
+compact_plan: false   # true: plan shown without default-valued fields
+plan_view: json       # ir_text: plan shown as typed IR text lines (proposal Fig. 2)
+post_steps: all       # danger: post-check only steps tagged safety=danger (typed IR only)

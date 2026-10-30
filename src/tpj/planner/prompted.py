@@ -10,7 +10,7 @@ import json
 
 from tpj.benchmarks.base import Task
 from tpj.eval.trace import emit
-from tpj.ir.examples import GOA_PLAN, GOA_QUERY
+from tpj.ir.examples import FEWSHOT_EXAMPLES
 from tpj.ir.formats.base import PlanFormat, PlanParseError
 from tpj.ir.schema import Plan
 from tpj.llm.client import LLMClient
@@ -31,20 +31,23 @@ class PromptedPlanner(Planner):
         llm: LLMClient,
         format: PlanFormat,
         few_shot: bool = True,
+        n_fewshot: int = 1,
         constrained: bool = True,
         max_parse_retries: int = 1,
     ):
         self.llm = llm
         self.format = format
         self.few_shot = few_shot
+        self.n_fewshot = n_fewshot
         self.constrained = constrained
         self.max_parse_retries = max_parse_retries
 
     def build_messages(self, query: str, tools: list[ToolSpec], feedback: str | None = None) -> list[dict]:
         msgs = [{"role": "system", "content": SYSTEM.format(format_rules=self.format.instructions())}]
         if self.few_shot:
-            msgs.append({"role": "user", "content": f"Request: {GOA_QUERY}\n\n(tools omitted in this example)"})
-            msgs.append({"role": "assistant", "content": self.format.render(GOA_PLAN)})
+            for ex_query, ex_plan in FEWSHOT_EXAMPLES[: self.n_fewshot]:
+                msgs.append({"role": "user", "content": f"Request: {ex_query}\n\n(tools omitted in this example)"})
+                msgs.append({"role": "assistant", "content": self.format.render(ex_plan)})
         tool_json = json.dumps([t.to_prompt() for t in tools], indent=1)
         content = f"Tools:\n{tool_json}\n\nRequest: {query}"
         if feedback:

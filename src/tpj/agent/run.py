@@ -251,6 +251,8 @@ class PlanRun:
 
         Failed calls are not gated: an exception is already a clear signal.
         """
+        if getattr(self.agent.gate, "post_steps", "all") == "danger":
+            succeeded = [call for call in succeeded if call.step.safety == "danger"]
         if not succeeded or not self.agent.gate.enabled("post"):
             return {}
         inputs = [

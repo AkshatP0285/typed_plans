@@ -63,6 +63,7 @@ def _result_row(task: Task, result: AgentResult, score: dict[str, float]) -> dic
     """One line of results.jsonl."""
     return {
         "task_id": task.id,
+        "category": task.meta.get("category") if task.meta else None,
         "status": result.status,
         "score": score,
         "error": result.error,

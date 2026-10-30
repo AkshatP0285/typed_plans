@@ -1,0 +1,3 @@
+# Numbered plain-text steps read by fixed rules - no converter LLM.
+_target_: tpj.ir.formats.FreeTextFormat
+converter: null

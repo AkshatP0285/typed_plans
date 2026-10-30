@@ -1,0 +1,15 @@
+# Qwen3-4B base + a LoRA adapter served via vLLM --enable-lora on port 8003.
+# `model` is overridden per run to the adapter name (ir_r8 / ir_r16 / ir_r32 /
+# ir_r64 / ir_think_r16 / ir_think_r32). Same shape as qwen3_4b_vllm.yaml.
+_target_: tpj.llm.client.LLMClient
+name: qwen3-4b-lora
+model: ir_r16
+base_url: ${oc.env:VLLM_LORA_URL,http://localhost:8003/v1}
+api_key_env: null
+temperature: 0.0
+max_tokens: 4096
+structured_output: response_format
+extra_body:
+  chat_template_kwargs: {enable_thinking: false}
+cache_dir: ${llm_cache_dir}
+max_concurrency: 64

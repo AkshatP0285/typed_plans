@@ -1,3 +1,4 @@
 _target_: tpj.judge.LLMJudge
 llm: ${models.judge}
 max_output_chars: 1500
+format: ${plan_format}   # same rules as the planner

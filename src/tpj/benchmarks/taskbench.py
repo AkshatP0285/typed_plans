@@ -81,6 +81,12 @@ def gold_plan(query: str, nodes: list[dict], links: list[dict]) -> Plan:
     """
     steps = []
     for index, node in enumerate(nodes):
+        # HuggingFace/Multimedia list some nodes as a bare tool-name string (no args),
+        # and a few dict nodes use "tool" instead of "task".
+        if not isinstance(node, dict):
+            node = {"task": node, "arguments": []}
+        elif "task" not in node:
+            node = {**node, "task": node.get("tool", "unknown")}
         args = {}
         for name, value in _arg_items(node.get("arguments")):
             match = _NODE_REF.match(value) if isinstance(value, str) else None
@@ -89,8 +95,10 @@ def gold_plan(query: str, nodes: list[dict], links: list[dict]) -> Plan:
 
     step_id_of_tool = {step.tool: step.id for step in steps}  # if a tool repeats, its last step wins
     for link in links:
-        source_id = step_id_of_tool.get(link["source"])
-        target_id = step_id_of_tool.get(link["target"])
+        # A handful of rows (5 of 4318 in dailylifeapis) use origin/destination/dest instead
+        # of source/target for the same thing - tolerate both rather than crash on them.
+        source_id = step_id_of_tool.get(link.get("source", link.get("origin")))
+        target_id = step_id_of_tool.get(link.get("target", link.get("destination", link.get("dest"))))
         if source_id and target_id:
             target_step = next(step for step in steps if step.id == target_id)
             if source_id not in target_step.deps():
@@ -103,10 +111,16 @@ def gold_plan(query: str, nodes: list[dict], links: list[dict]) -> Plan:
 
 def _gold_structure(task: Task) -> tuple[list, list, list]:
     """Gold (nodes, edges, literal args) for F1 scoring. Ref args are excluded: edges already cover them."""
-    nodes = [node["task"] for node in task.gold["nodes"]]
-    edges = [(link["source"], link["target"]) for link in task.gold["links"]]
+    def _norm(n):
+        if not isinstance(n, dict):
+            return {"task": n, "arguments": []}
+        return n if "task" in n else {**n, "task": n.get("tool", "unknown")}
+    raw = [_norm(n) for n in task.gold["nodes"]]
+    nodes = [node["task"] for node in raw]
+    edges = [(link.get("source", link.get("origin")),
+              link.get("target", link.get("destination", link.get("dest")))) for link in task.gold["links"]]
     args = []
-    for node in task.gold["nodes"]:
+    for node in raw:
         for name, value in _arg_items(node.get("arguments")):
             if not (isinstance(value, str) and _NODE_REF.match(value)):
                 args.append((node["task"], name, str(value)))

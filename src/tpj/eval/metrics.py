@@ -36,13 +36,15 @@ def _events(events: list[dict[str, Any]], type_: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------- per task
 def task_metrics(events: list[dict[str, Any]], score: dict[str, float]) -> dict[str, Any]:
     """Summarise one task's trace events into a flat metrics row."""
-    tokens, api_calls = _cost_by_role(events)
+    tokens, api_calls, latency = _cost_by_role(events)
     node_results = _events(events, "node_result")
     interventions = _events(events, "intervention")
     return {
         "score": score,
         "tokens": tokens,
         "api_calls": api_calls,
+        "latency": latency,
+        "task_latency": _task_latency(events),
         "plan": _plan_gate_row(events),
         "node_gate": _node_gate_confusion(node_results),
         "tool_executions": len(node_results),
@@ -55,21 +57,30 @@ def task_metrics(events: list[dict[str, Any]], score: dict[str, float]) -> dict[
     }
 
 
-def _cost_by_role(events: list[dict[str, Any]]) -> tuple[dict[str, int], dict[str, int]]:
-    """Tokens and API calls per role (planner, gate, judge, ...)."""
+def _cost_by_role(events: list[dict[str, Any]]) -> tuple[dict[str, int], dict[str, int], dict[str, float]]:
+    """Tokens, API calls and total latency-seconds per role (planner, gate, judge, ...)."""
     tokens: dict[str, int] = defaultdict(int)
     calls: dict[str, int] = defaultdict(int)
+    latency: dict[str, float] = defaultdict(float)
     for e in _events(events, "llm_call"):
         tokens[e["role"]] += e["prompt_tokens"] + e["completion_tokens"]
+        latency[e["role"]] += e.get("latency") or 0.0
         if e["role"] != "gate":  # gate calls are counted from "gate" events below
             calls[e["role"]] += 1
     for e in _events(events, "gate_api"):  # JEV reports its own token usage
         tokens["gate"] += (e.get("input_tokens") or 0) + (e.get("output_tokens") or 0)
+        latency["gate"] += e.get("latency") or 0.0
     # Every gate decision counts as one call, whichever gate (local model, API, LLM) made it.
     gate_decisions = len(_events(events, "gate"))
     if gate_decisions:
         calls["gate"] += gate_decisions
-    return dict(tokens), dict(calls)
+    return dict(tokens), dict(calls), dict(latency)
+
+
+def _task_latency(events: list[dict[str, Any]]) -> float:
+    """Wall-clock time from the first to the last event - how long the whole task took."""
+    times = [e["t"] for e in events]
+    return max(times) - min(times) if times else 0.0
 
 
 def _plan_gate_row(events: list[dict[str, Any]]) -> dict[str, Any]:

@@ -15,6 +15,8 @@ from tpj.llm.client import parse_json
 
 INSTRUCTIONS = """\
 Write the plan as JSON: {"steps": [...], "final": [...]}.
+Use the minimum number of steps that fulfils the request - never repeat the same tool call,
+or a near-duplicate of one, more than once with the same intent.
 Each step has:
 - "id": "s1", "s2", ... (unique)
 - "tool": exact tool name from the tool list
@@ -25,8 +27,12 @@ Each step has:
 - "safety": "danger" if the call changes the world (booking, payment, sending, deleting,
   writing), otherwise "safe"
 - "when": optional {"ref": "sK", "equals": true|false} to run the step only under a condition
+- "after": list of ids of EVERY step this one depends on, e.g. ["s1"] - required whenever a
+  dependency exists. Include a step here even if you also reference it with $ref in args;
+  "after" is the complete, authoritative dependency list, $ref is just how you also use its
+  data. Do not leave this empty if the step has any real dependency.
 "final": ids of the steps whose outputs answer the request.
-Dependencies are expressed only through references; do not describe execution order.
+List every dependency in "after" - never describe order only in prose or by list position.
 If no tool is needed, return {"steps": [], "final": []}."""
 
 

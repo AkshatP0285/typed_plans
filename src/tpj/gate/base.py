@@ -20,23 +20,53 @@ Phase = Literal["plan", "post"]
 OKAY, ERROR, NEEDS_FORMAT_CHANGE = "OKAY", "ERROR", "NEEDS_FORMAT_CHANGE"
 
 LABELS: dict[str, dict[str, str]] = {
+    # Ported from the JEV- branch's pre-exec pilot, prompt "fewshot" (the jev_or_fewshot4_v1
+    # experiment): F1 .961, detect .984 on the 466-case frozen test set - the best of 3 prompt
+    # variants tried. That pilot used binary VALID/INVALID; renamed to OKAY/ERROR here so the
+    # wording, the live criteria sent to JEV, and plan_verification_fewshot.json's "verdict"
+    # values all agree. NEEDS_FORMAT_CHANGE is intentionally not offered at the plan phase - it
+    # was never part of what was actually tested.
     "plan": {
-        OKAY: "The plan fulfils the request completely with the right tools, arguments and dependencies.",
-        ERROR: "The plan uses a wrong tool, wrong argument value, wrong dependency, or misses/adds a step.",
-        NEEDS_FORMAT_CHANGE: "The plan is right in substance but an argument's format or type does not "
-        "match what the tool expects.",
+        OKAY: "The plan correctly and completely fulfils the user request: every step uses an "
+        "appropriate available tool with arguments that match the tool schema and the request, "
+        "dependencies are correct, and no needed step is missing or unneeded step is present.",
+        ERROR: "The plan has at least one defect: a needed step is missing, a step is unnecessary "
+        "or redundant, a step uses the wrong tool, an argument value is wrong for the request or "
+        "violates the tool schema, or a dependency is wrong.",
     },
+    # Ported from the JEV- branch's post-exec pilot (post-exec/run_experiments.py) - same 3-way
+    # label set already used here, just more precise, disambiguating wording.
     "post": {
-        OKAY: "The tool output is a valid, plausible result of this call and can be used by later steps.",
-        ERROR: "The output shows a failure, is empty, implausible, or inconsistent with the request or arguments.",
-        NEEDS_FORMAT_CHANGE: "The output is right in substance but its structure or type does not match "
-        "what later steps expect.",
+        OKAY: "Execution completed successfully AND the returned output satisfies the expected "
+        "output schema/requirements provided in the case.",
+        ERROR: "The tool call failed or the tool output explicitly reports an execution failure, "
+        "exception, timeout, or unsuccessful operation. Use this for execution failure, not "
+        "merely a successful result with the wrong format.",
+        NEEDS_FORMAT_CHANGE: "Execution appears to have completed, but the returned output is "
+        "missing required fields, has incompatible types, or violates the expected output "
+        "format/schema. Use this when the main issue is output representation.",
     },
 }
 
 INSTRUCTIONS: dict[str, str] = {
-    "plan": "Is this tool-calling plan correct for the user's request?",
-    "post": "Is the observed outcome of this tool call acceptable?",
+    "plan": "Classify the plan in case_to_classify (a PRE-EXECUTION plan: ordered steps; an "
+    "argument {\"$ref\": \"sN\", \"path\": \"field.sub\"} means an output of step sN) against its "
+    "user_query and available_tools. labeled_examples are solved examples for reference only: "
+    "each shows a user_query, a plan and the correct verdict (with a reason when ERROR). Do not "
+    "classify the examples. Return OKAY only if the plan in case_to_classify is correct and "
+    "complete for its request; otherwise return ERROR.",
+    "post": "Classify this POST-EXECUTION tool outcome. Use the user request, tool call, "
+    "execution status/output, and expected output requirements. Return exactly one label from "
+    "the supplied criteria. If the tool explicitly failed, choose ERROR. If execution succeeded "
+    "but its output violates the expected schema, choose NEEDS_FORMAT_CHANGE. Choose OKAY only "
+    "when execution succeeded and the output meets the requirements. Do not infer success merely "
+    "because output exists. Note: this environment's tools are mocked for benchmarking - a "
+    "generic placeholder object such as {\"id\": ..., \"value\": \"<Type:hash>\"} is a normal, "
+    "correct mock result for ANY declared return type (including when the placeholder's own "
+    "label differs from the declared type, e.g. a step declaring 'bool' legitimately receiving "
+    "such a placeholder) and must be classified OKAY. Only choose ERROR or NEEDS_FORMAT_CHANGE "
+    "when the tool explicitly reports failure, raises an exception, or the output is otherwise "
+    "malformed (e.g. missing entirely, or an error message) - not merely generic-looking.",
 }
 
 
@@ -88,8 +118,11 @@ class Gate(ABC):
     name = "gate"
 
     def __init__(self, threshold: float = 0.5, check_plan: bool = True, check_post: bool = True,
-                 max_chars: int = 6000):
+                 max_chars: int = 6000, post_steps: str = "all"):
         self.threshold = threshold
+        # "all": check every executed step; "danger": only steps the plan marks safety=danger
+        # (needs a format that carries safety tags, i.e. typed IR).
+        self.post_steps = post_steps
         self.check_plan = check_plan
         self.check_post = check_post
         self.max_chars = max_chars

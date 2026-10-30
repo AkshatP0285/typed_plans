@@ -1,0 +1,9 @@
+_target_: tpj.planner.retrieval.RetrievalPlanner
+llm: ${models.planner}
+format: ${plan_format}
+subset: ${benchmark.subset}
+k: 3
+exclude_seeds: [0, 1]     # demo pool excludes the first exclude_n tasks of each eval seed
+exclude_n: 500
+constrained: true
+max_parse_retries: 1

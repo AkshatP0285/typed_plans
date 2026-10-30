@@ -8,3 +8,7 @@ checkpoints/
 third_party/
 data/raw/
 .env
+lora/
+temp/
+outputs_archive_pre_limit_fix/
+docs/

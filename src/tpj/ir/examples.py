@@ -48,3 +48,79 @@ GOA_PLAN = Plan.model_validate(
 
 # Expected waves for GOA_PLAN (Figure 3).
 GOA_WAVES = [["s1", "s2", "s3", "s4"], ["s5", "s6"], ["s7", "s8", "s9", "s10"], ["s11"]]
+
+# Separate from GOA_PLAN on purpose: tests and the toy benchmark pin exact structure
+# (waves, dirty regions) against GOA_PLAN, so it stays untouched. This is the one
+# actually shown to the planner as its few-shot example (see prompted.py).
+#
+# `after` is filled in for every step with a dependency, even ones that also carry a
+# $ref - measured on the real benchmark that models under-declare deps by ~40% when
+# "after" is demonstrated as a rare, ordering-only field (avg 0.42 deps/step vs graph
+# format's 0.70 on identical tasks), because it reads as optional busywork buried
+# alongside returns/safety/when. Demonstrating it as the complete, redundant
+# dependency list (see schema.py's field description) measurably fixes that.
+def _with_full_after(plan: Plan) -> Plan:
+    steps = []
+    for step in plan.steps:
+        d = step.model_dump()
+        d["after"] = sorted(step.deps())
+        steps.append(d)
+    return Plan.model_validate({"query": plan.query, "steps": steps, "final": plan.final})
+
+
+FEWSHOT_PLAN = _with_full_after(
+    Plan.model_validate(
+        {
+            "query": GOA_QUERY,
+            "steps": [s.model_dump() for s in GOA_PLAN.steps] + [
+                {"id": "s12", "tool": "block_calendar", "args": {"dates": "trip dates"},
+                 "returns": "Sent", "safety": "safe", "after": ["s11"]},
+            ],
+            "final": ["s12"],
+        }
+    )
+)
+
+# Second and third few-shot examples - short, different domains, each emphasising one
+# pattern GOA_PLAN/FEWSHOT_PLAN under-demonstrates on its own: conditional branching
+# via "when" (example 2), and an ordering-only "after" chain paired with a $ref in a
+# domain that isn't travel booking, to check the pattern generalises (example 3).
+BALANCE_QUERY = "Check my account balance. If it's below 100, send me a low-balance alert; otherwise send a confirmation that all is fine."
+BALANCE_PLAN = _with_full_after(Plan.model_validate(
+    {
+        "query": BALANCE_QUERY,
+        "steps": [
+            {"id": "s1", "tool": "get_balance", "args": {}, "returns": "float", "safety": "safe"},
+            {"id": "s2", "tool": "less_than", "args": {"value": _r("s1"), "threshold": 100},
+             "returns": "bool", "safety": "safe"},
+            {"id": "s3", "tool": "send_alert", "args": {"reason": "low balance"},
+             "returns": "Sent", "safety": "safe", "when": {"ref": "s2", "equals": True}},
+            {"id": "s4", "tool": "send_confirmation", "args": {"message": "all is fine"},
+             "returns": "Sent", "safety": "safe", "when": {"ref": "s2", "equals": False}},
+        ],
+        "final": ["s3", "s4"],
+    }
+))
+
+DOWNLOAD_QUERY = "Download the quarterly report file, then verify its checksum, then archive it once verified."
+DOWNLOAD_PLAN = _with_full_after(Plan.model_validate(
+    {
+        "query": DOWNLOAD_QUERY,
+        "steps": [
+            {"id": "s1", "tool": "download_file", "args": {"name": "quarterly_report"},
+             "returns": "FileHandle", "safety": "safe"},
+            # ordering-only: verify_checksum needs the file to already be downloaded, but
+            # does not use s1's return value (it re-reads the file by name) - still listed
+            # in "after" per the required/redundant dependency-list convention above.
+            {"id": "s2", "tool": "verify_checksum", "args": {"name": "quarterly_report"},
+             "returns": "bool", "safety": "safe", "after": ["s1"]},
+            {"id": "s3", "tool": "archive_file", "args": {"file": _r("s1")},
+             "returns": "Sent", "safety": "safe", "when": {"ref": "s2", "equals": True}},
+        ],
+        "final": ["s3"],
+    }
+))
+
+# (query, plan) pairs in the order they're added to the prompt - prompted.py's
+# `n_fewshot` picks a prefix of this list, so 1/2/3 examples is one config change.
+FEWSHOT_EXAMPLES = [(GOA_QUERY, FEWSHOT_PLAN), (BALANCE_QUERY, BALANCE_PLAN), (DOWNLOAD_QUERY, DOWNLOAD_PLAN)]

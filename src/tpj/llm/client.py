@@ -100,7 +100,7 @@ class LLMClient:
         if self._cache is not None and key in self._cache:
             res: LLMResult = self._cache[key]
             res = LLMResult(**{**res.__dict__, "cached": True})
-            self._record(role, res, latency=0.0)
+            self._record(role, res, latency=0.0, messages=messages)
             return res
 
         t0 = time.time()
@@ -120,10 +120,15 @@ class LLMClient:
         )
         if self._cache is not None:
             self._cache[key] = res
-        self._record(role, res, latency=time.time() - t0)
+        self._record(role, res, latency=time.time() - t0, messages=messages)
         return res
 
-    def _record(self, role: str, res: LLMResult, latency: float) -> None:
+    def _record(self, role: str, res: LLMResult, latency: float, messages: list[dict[str, Any]]) -> None:
+        # Raw prompt + response go into the trace itself (not just the disk cache, which is
+        # keyed by request hash and not organised per-task) so a task's trace.jsonl is
+        # self-contained for re-scoring under different criteria later without re-running
+        # any model - e.g. a free_text run's planner output (before conversion) and its
+        # converter output (after) are both here, independently inspectable.
         emit(
             "llm_call",
             role=role,
@@ -132,6 +137,8 @@ class LLMClient:
             completion_tokens=res.completion_tokens,
             cached=res.cached,
             latency=latency,
+            prompt=messages,
+            response=res.text,
         )
 
 

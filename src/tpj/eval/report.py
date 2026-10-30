@@ -7,8 +7,20 @@ from typing import Any
 
 # (dotted path into metrics.json, column name in the table)
 COLUMNS = [
+    # fair metric: every plan_format can express this, this is the real head-to-head
     ("success_rate", "SR"),
-    ("avg_tokens.total", "tokens"),
+    ("crash_rate", "crash_rate"),
+    # cost: free_text pays for a 2nd (converter) call that typed_ir/graph don't - keep it
+    # visible per-role rather than folded into one "tokens" number, so a free_text win/loss
+    # can be read against what it cost to get there, not just whether it won
+    ("avg_api_calls.planner", "planner_calls"),
+    ("avg_tokens.planner", "planner_tokens"),
+    ("avg_api_calls.converter", "converter_calls"),
+    ("avg_tokens.converter", "converter_tokens"),
+    ("avg_tokens.total", "tokens_total"),
+    # gate quality, measured against injected faults (not an LLM-rubric score) -
+    # plan-phase is the only one graph/free_text can meaningfully share, since they
+    # don't carry safety/when at all, so there's nothing format-specific to break out
     ("avg_api_calls.judge", "judge_calls"),
     ("avg_api_calls.gate", "gate_calls"),
     ("gate_node.f1", "gate_node_f1"),

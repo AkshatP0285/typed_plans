@@ -1,0 +1,99 @@
+[
+ {
+  "_base_id": "toolace_6860",
+  "_kind": "gt",
+  "user_query": "Can you get the seasons and player statistics for the team with ID 102? Also do the same for the team with ID 204.",
+  "plan": {
+   "steps": [
+    {
+     "id": "s1",
+     "tool": "Get Player Seasons by Team ID",
+     "args": {
+      "team_id": 102
+     }
+    },
+    {
+     "id": "s2",
+     "tool": "Get Player Seasons by Team ID",
+     "args": {
+      "team_id": 204
+     }
+    }
+   ],
+   "final": ["s1", "s2"]
+  },
+  "verdict": "OKAY"
+ },
+ {
+  "_base_id": "apigen_mt_4740",
+  "_kind": "gt",
+  "user_query": "Hi, I'm Fatima Brown, and I need to exchange a digital camera I received.",
+  "plan": {
+   "steps": [
+    {
+     "id": "s1",
+     "tool": "think",
+     "args": {
+      "thought": "The user, Fatima Brown, wants to exchange a delivered digital camera. No email, zip code, or order ID was provided, and the available tools cannot identify the user or order without additional identifying information."
+     }
+    },
+    {
+     "id": "s2",
+     "tool": "transfer_to_human_agents",
+     "args": {
+      "summary": "Fatima Brown requested an exchange for a delivered digital camera. The agent lacks an email, zip code, or order ID to identify the user and order using available tools."
+     },
+     "after": ["s1"]
+    }
+   ],
+   "final": ["s2"]
+  },
+  "verdict": "OKAY"
+ },
+ {
+  "_base_id": "apigen_mt_3574",
+  "_kind": "replace_arg",
+  "user_query": "I'd like help modifying a pending order. The order number is #W8058304.",
+  "plan": {
+   "steps": [
+    {
+     "id": "s1",
+     "tool": "get_order_details",
+     "args": {
+      "order_id": "pending_smartphone_order_id"
+     }
+    },
+    {
+     "id": "s2",
+     "tool": "think",
+     "args": {
+      "thought": "Confirm the order is pending, then ask the user what they want to modify (address, items, or payment) and the new value; after explicit confirmation, call the corresponding modify_pending_order_address, modify_pending_order_items, or modify_pending_order_payment tool."
+     },
+     "after": ["s1"]
+    }
+   ],
+   "final": ["s2"]
+  },
+  "verdict": "ERROR",
+  "reason": "wrong argument: order_id is 'pending_smartphone_order_id' but the request says '#W8058304'"
+ },
+ {
+  "_base_id": "toolace_2234",
+  "_kind": "remove",
+  "user_query": "I recently bought a book, but I can't remember its exact title. However, I have the ISBN number, which is 978-3-16-148410-0. Can you find out more about it for me?",
+  "plan": {
+   "steps": [
+    {
+     "id": "s1",
+     "tool": "getCatalogingInfo",
+     "args": {
+      "isbn": "978-3-16-148410-0"
+     }
+    }
+   ],
+   "final": ["s1"]
+  },
+  "verdict": "ERROR",
+  "reason": "missing step: the plan never calls getBookDetails, which the request needs"
+ }
+]
